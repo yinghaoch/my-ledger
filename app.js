@@ -1,10 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-// 新增：引入雲端相簿儲存套件
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
-// ⚠️ 請填入你在 Firebase 申請的金鑰
+// ⚠️ 你的專屬 Firebase 金鑰
 const firebaseConfig = {
     apiKey: "AIzaSyBMYdklxkNrpAiBCQsk6qvRZZ4A2fOcRVw",
     authDomain: "my-ledger-app-99f5e.firebaseapp.com",
@@ -17,14 +15,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
-const storage = getStorage(app); // 初始化儲存空間
 const provider = new GoogleAuthProvider();
 
 let currentUserUid = null;
 let currentUserName = "";
 let currentMode = "personal";
 let unsubscribe = null;
-let compressedBlob = null; // 存放壓縮後的圖片二進位資料
 let html5QrcodeScanner = null;
 
 document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
@@ -79,28 +75,23 @@ function switchMode(mode) {
     }
 }
 
-// 📷 功能一：發票 QR Code 掃描與自動解析邏輯
+// 📷 發票 QR Code 掃描與自動解析邏輯
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     if (readerDiv.style.display === 'none') {
         readerDiv.style.display = 'block';
-        // 啟動相機
         html5QrcodeScanner = new Html5Qrcode("reader");
         html5QrcodeScanner.start(
-            { facingMode: "environment" }, // 使用後鏡頭
+            { facingMode: "environment" },
             { fps: 10, qrbox: { width: 250, height: 250 } },
             (qrCodeMessage) => {
-                // 掃描成功，解析台灣電子發票格式 (左邊 QR Code 共 84 碼)
-                // 格式範例: AB123456781150705... (前10碼發票號碼, 接下來3碼民國年, 2碼月份, 2碼日期, 8碼十六進位金額)
                 if (qrCodeMessage.length >= 30) {
-                    const year = parseInt(qrCodeMessage.substring(10, 13)) + 1911; // 民國轉西元
+                    const year = parseInt(qrCodeMessage.substring(10, 13)) + 1911;
                     const month = qrCodeMessage.substring(13, 15);
                     const day = qrCodeMessage.substring(15, 17);
-                    // 金額是 17 到 25 碼的十六進位字串，轉成十進位
                     const hexAmount = qrCodeMessage.substring(17, 25);
                     const amount = parseInt(hexAmount, 16);
 
-                    // 自動帶入輸入框
                     document.getElementById('dateInput').value = `${year}-${month}-${day}`;
                     document.getElementById('amountInput').value = amount;
                     document.getElementById('itemInput').value = "電子發票花費";
@@ -111,7 +102,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                     alert("這似乎不是標準的台灣電子發票左側 QR Code，請掃描左邊那顆試試！");
                 }
             },
-            (errorMessage) => { /* 掃描中...忽略錯誤提示 */ }
+            (errorMessage) => {}
         );
     } else {
         stopScanner();
@@ -126,47 +117,7 @@ function stopScanner() {
     }
 }
 
-// 🖼️ 功能二：本地相片縮圖、Canvas 自動壓縮演算法
-document.getElementById('photoInput').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = function (event) {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = function () {
-            // 設定最大寬度，等比例縮小圖片
-            const max_width = 800;
-            let width = img.width;
-            let height = img.height;
-
-            if (width > max_width) {
-                height = Math.round((height * max_width) / width);
-                width = max_width;
-            }
-
-            // 利用 Canvas 重新繪製壓縮圖
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-
-            // 壓縮品質設為 0.7 (70%) 轉成二進位 Blob 檔案
-            canvas.toBlob((blob) => {
-                compressedBlob = blob;
-                // 顯示預覽畫面與壓縮資訊
-                document.getElementById('imgPreview').src = canvas.toDataURL('image/jpeg', 0.7);
-                document.getElementById('previewArea').style.display = 'block';
-                document.getElementById('compressInfo').innerText = `原本: ${(file.size/1024/1024).toFixed(2)}MB -> 壓縮後: ${(blob.size/1024).toFixed(0)}KB (省下大量頻寬！)`;
-            }, 'image/jpeg', 0.7);
-        };
-    };
-});
-
-// 儲存按鈕（含檔案上傳邏輯）
+// 儲存按鈕
 document.getElementById('saveBtn').addEventListener('click', async () => {
     const date = document.getElementById('dateInput').value;
     const item = document.getElementById('itemInput').value.trim();
@@ -174,29 +125,15 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
 
     if (!item || !amount || !date) { alert('請填寫完整的日期、品名與金額！'); return; }
 
-    // 按鈕防重複點擊
     document.getElementById('saveBtn').innerText = "上傳中...";
     document.getElementById('saveBtn').disabled = true;
-
-    let imageUrl = "";
-
-    // 如果有附照片，先將壓縮後的圖片上傳至 Firebase Storage
-    if (compressedBlob) {
-        const fileRef = ref(storage, `receipts/${currentUserUid}_${new Date().getTime()}.jpg`);
-        try {
-            const uploadResult = await uploadBytes(fileRef, compressedBlob);
-            imageUrl = await getDownloadURL(uploadResult.ref); // 拿到雲端圖片的永久公開網址
-        } catch (err) {
-            console.error("圖片上傳失敗", err);
-        }
-    }
 
     let newRecord = {
         mode: currentMode,
         date: date,
         item: item,
         amount: amount,
-        imageUrl: imageUrl, // 存入圖片網址（若無則為空字串）
+        imageUrl: "", // 已安全拔除相簿服務，預設為空字串
         timestamp: new Date().getTime()
     };
 
@@ -210,12 +147,8 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
 
     try {
         await addDoc(collection(db, "all_ledgers"), newRecord);
-        // 還原輸入框
         document.getElementById('itemInput').value = '';
         document.getElementById('amountInput').value = '';
-        document.getElementById('photoInput').value = '';
-        document.getElementById('previewArea').style.display = 'none';
-        compressedBlob = null;
     } catch (e) {
         alert("儲存失敗！");
     } finally {
@@ -224,15 +157,22 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     }
 });
 
-// 渲染清單（支援圖片點擊放大）
+// 渲染清單（繞過索引限制：在前端進行時間降序排序）
 function renderList(snapshot, isPersonal) {
     let total = 0; let html = ''; let records = []; let membersSet = new Set();
+    
     snapshot.forEach((doc) => {
-        const r = doc.data(); records.push(r); total += r.amount; if (!isPersonal) membersSet.add(r.payer);
-        
-        // 檢查是否有附照片網址，有的話就渲染 <img> 標籤
-        const imgHtml = r.imageUrl ? `<a href="${r.imageUrl}" target="_blank"><img src="${r.imageUrl}" class="receipt-thumb"></a>` : '';
+        const r = doc.data();
+        records.push(r);
+    });
 
+    // 💡 在瀏覽器端直接排序，免去 Firebase 開通索引的麻煩
+    records.sort((a, b) => b.timestamp - a.timestamp);
+
+    records.forEach((r) => {
+        total += r.amount;
+        if (!isPersonal) membersSet.add(r.payer);
+        
         html += `
             <li>
                 <div class="history-item-content">
@@ -240,7 +180,6 @@ function renderList(snapshot, isPersonal) {
                         <div class="li-top"><span>${r.item}</span><span>$${r.amount}</span></div>
                         <div class="li-bottom"><span>${isPersonal ? '' : '付款人: ' + r.payer + ' | '}${r.date}</span></div>
                     </div>
-                    ${imgHtml}
                 </div>
             </li>`;
     });
@@ -249,7 +188,7 @@ function renderList(snapshot, isPersonal) {
 }
 
 function startListeningPersonal() {
-    const q = query(collection(db, "all_ledgers"), where("mode", "==", "personal"), where("uid", "==", currentUserUid), orderBy("timestamp", "desc"));
+    const q = query(collection(db, "all_ledgers"), where("mode", "==", "personal"), where("uid", "==", currentUserUid));
     unsubscribe = onSnapshot(q, (snapshot) => {
         const { total } = renderList(snapshot, true);
         document.getElementById('reportCard').innerHTML = `<p style="font-size:16px; font-weight:bold;">🔒 您的個人總消費：$${total.toFixed(0)} 元</p>`;
@@ -258,7 +197,7 @@ function startListeningPersonal() {
 
 function startListeningGroup() {
     const targetGroup = document.getElementById('groupCode').value.trim();
-    const q = query(collection(db, "all_ledgers"), where("mode", "==", "group"), where("groupCode", "==", targetGroup), orderBy("timestamp", "desc"));
+    const q = query(collection(db, "all_ledgers"), where("mode", "==", "group"), where("groupCode", "==", targetGroup));
     unsubscribe = onSnapshot(q, (snapshot) => {
         const { total: totalSpent, records, members } = renderList(snapshot, false);
         if (records.length === 0) { document.getElementById('reportCard').innerHTML = "<p>目前此群組尚無消費紀錄。</p>"; return; }
