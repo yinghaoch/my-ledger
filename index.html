@@ -21,7 +21,7 @@
             
             <div class="tabs">
                 <button id="tabPersonal" class="tab-btn active">🔒 個人私帳</button>
-                <button id="tabGroup" class="tab-btn">👥 多人群組分帳</button>
+                <button id="tabGroup" class="tab-btn">👥 群組分帳</button>
             </div>
 
             <div class="card">
@@ -43,7 +43,7 @@
                 </div>
                 <div class="form-group">
                     <label>花費品名：</label>
-                    <input type="text" id="itemInput" placeholder="例如：午餐、民宿">
+                    <input type="text" id="itemInput" placeholder="例如：午餐、八方">
                 </div>
                 <div class="form-group">
                     <label>金額：</label>
@@ -59,14 +59,18 @@
             </div>
 
             <div id="reportArea">
-                <h3>📊 帳目統計</h3>
+                <h3>📊 帳目統計 (總覽)</h3>
                 <div id="reportCard" class="card report-card">
                     <p>計算中...</p>
                 </div>
             </div>
 
-            <h3>📜 歷史明細</h3>
-            <ul id="historyList"></ul>
+            <h3>📜 歷史明細 (點擊日期可收折)</h3>
+            <div class="delete-toolbar">
+                <button id="deleteSelectedBtn" class="btn-danger btn-toolbar-del">🗑️ 刪除選中項目</button>
+                <button id="deleteAllBtn" class="btn-danger btn-toolbar-del" style="background:#8e8e93;">⚠️ 全部清空</button>
+            </div>
+            <div id="historyCollapseContainer" style="margin-top: 12px;"></div>
         </div>
     </div>
 

@@ -1,30 +1,191 @@
-/* 掃描按鈕專用樣式 */
-.btn-scan {
-    background: #af52de; /* 蘋果紫 */
-    margin-bottom: 10px;
-}
-.btn-scan:active {
-    background: #8930b5;
+/* 全局樣式優化 */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f2f2f7;
+    margin: 0;
+    padding: 10px;
+    color: #1c1c1e;
 }
 
-/* 歷史紀錄裡顯示的小圖片縮圖 */
-.receipt-thumb {
-    width: 50px;
-    height: 50px;
-    object-fit: cover;
-    border-radius: 6px;
-    margin-left: 10px;
+.container {
+    max-width: 500px;
+    margin: 0 auto;
+    padding-bottom: 30px;
+}
+
+h2, h3 {
+    text-align: center;
+    margin: 15px 0 10px 0;
+    font-weight: 600;
+}
+
+/* 卡片美化 */
+.card {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.bg-light { background-color: #fafafa; }
+.text-center { text-align: center; }
+
+/* 表單大格子 */
+.form-group {
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 6px;
+    color: #48484a;
+}
+
+input[type="text"], input[type="number"], input[type="date"] {
+    font-size: 16px; /* 防止 iOS 放大 */
+    padding: 12px;
+    border: 1px solid #c7c7cc;
+    border-radius: 8px;
+    background: #f2f2f7;
+    outline: none;
+    box-sizing: border-box;
+}
+
+/* 📱 核心改動：大幅度加大所有按鈕，高度設為 50px 超好按 */
+button, .tab-btn, .btn-g, .btn-danger, .btn-scan, #saveBtn {
+    width: 100%;
+    height: 50px; /* 大按鈕高 */
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 10px;
     cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+button:active {
+    transform: scale(0.98); /* 點擊下沉回饋 */
+}
+
+/* 按鈕顏色區分 */
+#saveBtn {
+    background: #007aff;
+    color: white;
+    margin-top: 10px;
+}
+#saveBtn:active { background: #0056b3; }
+
+.btn-g { background: #34c759; color: white; }
+.btn-g:active { background: #248a3d; }
+
+.btn-danger { background: #ff3b30; color: white; }
+.btn-danger:active { background: #c91e14; }
+
+.btn-scan { background: #af52de; color: white; }
+.btn-scan:active { background: #8930b5; }
+
+/* 頁籤加大排版 */
+.tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.tab-btn {
+    flex: 1;
+    background: #e5e5ea;
+    color: #3a3a3c;
+}
+
+.tab-btn.active {
+    background: #1c1c1e;
+    color: white;
+}
+
+/* 🔄 日期收折摺疊面板樣式 */
+.date-group {
+    background: white;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    overflow: hidden;
     border: 1px solid #e5e5ea;
 }
 
-/* 調整明細內排版，讓圖片能排在右邊 */
-.history-item-content {
+/* 摺疊標頭：包含日期、當日總額、展開箭頭 */
+.date-header {
+    background: #e5eafe;
+    padding: 14px;
+    font-weight: bold;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    width: 100%;
+    cursor: pointer;
+    user-select: none;
 }
-.history-details {
+
+.date-header:active { background: #d2daf7; }
+
+.date-title-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.date-total-right {
+    color: #ff3b30;
+    font-size: 15px;
+}
+
+/* 歷史明細明細項目 */
+.item-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    background: #fff;
+}
+
+.item-list li {
+    padding: 12px 14px;
+    border-top: 1px solid #f2f2f7;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 15px;
+}
+
+.item-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     flex: 1;
+}
+
+.item-name { font-weight: 500; }
+.item-info { font-size: 12px; color: #8e8e93; margin-top: 2px; }
+.item-amount { font-weight: bold; color: #1c1c1e; }
+
+/* 加大勾選方塊，方便按日期或單筆勾選 */
+input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+}
+
+/* 批次刪除工具列組合 */
+.delete-toolbar {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+.btn-toolbar-del {
+    height: 44px;
+    font-size: 14px;
 }
