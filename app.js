@@ -79,17 +79,15 @@ function switchMode(mode) {
     }
 }
 
-// 📷 還原「全螢幕彈窗帶有關閉按鈕」的官方 Scanner 模式，並升級智慧 Regex 辨識
+// 📷 智慧發票 QR Code 掃描解析（含自動抓取真實商品品名名稱）
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     readerDiv.style.display = 'block';
 
-    // 如果之前有殘留的 Scanner，先清空它
     if (html5QrcodeScanner) {
         html5QrcodeScanner.clear().catch(() => {});
     }
 
-    // 使用官方標準介面：會自動在上方產生關閉按鈕，並提供全螢幕對焦框
     html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
         fps: 15, 
         qrbox: (viewfinderWidth, viewfinderHeight) => {
@@ -103,8 +101,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
         (qrCodeMessage) => {
             if (qrCodeMessage.length >= 30) {
                 try {
-                    // 🎯 升級：使用智慧 Regex 搜尋字串中「連續7位數字」作為日期特徵 (3碼民國年 + 2碼月 + 2碼日)
-                    // 例如從 BP259660641150526... 中精準定位出 "1150526"
+                    // 1. 使用智慧 Regex 搜尋字串中「連續7位數字」作為日期特徵
                     const dateMatch = qrCodeMessage.match(/\d{7}/);
                     if (!dateMatch) {
                         throw new Error("找不到標準發票日期特徵");
@@ -116,10 +113,8 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                     const month = dateStr.substring(3, 5);
                     const day = dateStr.substring(5, 7);
 
-                    // 定位金額：緊接在 7 位日期後面的 8 位隨機碼之後，即為 8 位 16 進位金額
-                    // 我們直接從找到的日期位置往後推算
+                    // 2. 定位金額：從找到的日期位置往後推算 11 碼，切出 8 碼 16 進位金額
                     const dateIndex = qrCodeMessage.indexOf(dateStr);
-                    // 日期長度 7 + 隨機碼 4 = 11。所以從 dateIndex + 11 開始切 8 碼
                     const hexAmount = qrCodeMessage.substring(dateIndex + 11, dateIndex + 19);
                     const amount = parseInt(hexAmount, 16);
 
@@ -128,12 +123,30 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                         throw new Error("計算出的日期或金額不合法");
                     }
 
-                    // 成功解析，自動帶入表單
+                    // 🎯 3. 動態解析品名邏輯：
+                    // 台灣發票格式後半段通常是用冒號（:）隔開商品明細，例如 :1:10:1:108茶王:1:60
+                    // 我們切開所有冒號，尋找不包含純數字、也不是五角星號的「第一個中文字串/商品名稱」
+                    let finalItemName = "電子發票消費"; // 預設防呆備用值
+                    const parts = qrCodeMessage.split(':');
+                    
+                    if (parts.length > 2) {
+                        // 從第三個區段開始尋找可能的品名
+                        for (let i = 2; i < parts.length; i++) {
+                            let p = parts[i].trim();
+                            // 如果這個區段不是純數字、長度大於0、且不是用來遮蔽的星號
+                            if (p && isNaN(p) && !p.includes('***')) {
+                                finalItemName = `發票：${p}`;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 成功解析，自動帶入表單欄位
                     document.getElementById('dateInput').value = `${year}-${month}-${day}`;
                     document.getElementById('amountInput').value = amount;
-                    document.getElementById('itemInput').value = "電子發票消費";
+                    document.getElementById('itemInput').value = finalItemName;
                     
-                    alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n自動帶入金額: $${amount} 元`);
+                    alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n消費品名: ${finalItemName}\n自動帶入金額: $${amount} 元`);
                     
                     // 關閉全螢幕相機視窗並隱藏
                     html5QrcodeScanner.clear().then(() => {
@@ -226,7 +239,6 @@ function renderCollapsedList(snapshot, isPersonal) {
     sortedDates.forEach((date) => {
         let group = groupedByDate[date];
         
-        // 🔒 根據全域陣列判斷該日期目前應該是顯示還是隱藏（預設 expandedDates 是空的，所以一律是 none 隱藏）
         const isExpanded = expandedDates.includes(date);
         const displayStyle = isExpanded ? 'block' : 'none';
         const arrowText = isExpanded ? '▲ 收折' : '▼ 展開';
