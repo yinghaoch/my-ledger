@@ -79,36 +79,39 @@ function switchMode(mode) {
     }
 }
 
-// 📷 修正版：正確初始化並直接 Render 啟動官方大畫面相機視窗
+// 📷 智慧發票 QR Code 掃描解析（加入多鏡頭強制鎖定主相機機制）
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     readerDiv.style.display = 'block';
 
-    // 1. 如果之前有殘留的 Scanner，先確保乾淨清空
     if (html5QrcodeScanner) {
         html5QrcodeScanner.clear().catch(() => {});
     }
 
-    // 2. 正確建立官方標準控制台執行個體
+    // 🎯 精準硬體鎖定：告訴瀏覽器一定要用後置(environment)的主相機，並設定標準解析度避免開到長焦
     html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
-        fps: 15, 
+        fps: 20, // 提升幀率讓對焦更靈敏
         qrbox: (viewfinderWidth, viewfinderHeight) => {
             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-            return { width: Math.floor(minEdge * 0.75), height: Math.floor(minEdge * 0.75) };
+            // 放大對焦框比例到 0.8，讓手機更好對準發票
+            return { width: Math.floor(minEdge * 0.8), height: Math.floor(minEdge * 0.8) };
+        },
+        videoConstraints: {
+            facingMode: { exact: "environment" },
+            // 強制設定為標準 Full HD 比例，有助於行動瀏覽器直接調用一號主鏡頭
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
         },
         rememberLastUsedCamera: true
     }, false);
 
-    // 3. 呼叫官方標準 .render() 真正把相機「點亮並呈現在網頁畫面上」
     html5QrcodeScanner.render(
         (qrCodeMessage) => {
-            // 🎯 當相機「真正捕捉並成功回傳字串」時，才觸發內部的防呆解析邏輯
             if (!qrCodeMessage || qrCodeMessage.length < 30 || !qrCodeMessage.includes(':')) {
-                return; // 如果是一開始晃動抓到的雜訊，直接忽略，不往下跑以免出錯
+                return; 
             }
 
             try {
-                // A. 使用智慧 Regex 撈取連續 7 位數的發票日期特徵 (民國年3碼+月2碼+日2碼)
                 const dateMatch = qrCodeMessage.match(/\d{7}/);
                 if (!dateMatch) return;
 
@@ -118,7 +121,6 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                 const month = dateStr.substring(3, 5);
                 const day = dateStr.substring(5, 7);
 
-                // B. 安全換算金額位置
                 const dateIndex = qrCodeMessage.indexOf(dateStr);
                 if (dateIndex === -1 || (dateIndex + 19) > qrCodeMessage.length) return;
                 
@@ -129,7 +131,6 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                     return;
                 }
 
-                // C. 解析品名名稱
                 let finalItemName = "電子發票消費"; 
                 const parts = qrCodeMessage.split(':');
                 if (parts && parts.length > 2) {
@@ -142,14 +143,12 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                     }
                 }
 
-                // D. 填入輸入框表單
                 document.getElementById('dateInput').value = `${year}-${month}-${day}`;
                 document.getElementById('amountInput').value = amount;
                 document.getElementById('itemInput').value = finalItemName;
                 
                 alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n消費品名: ${finalItemName}\n自動帶入金額: $${amount} 元`);
                 
-                // E. 自動關閉相機並隱藏區塊
                 html5QrcodeScanner.clear().then(() => {
                     readerDiv.style.display = 'none';
                 }).catch(() => {
@@ -160,9 +159,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                 console.log("過濾無效的掃描訊號:", err);
             }
         },
-        (errorMessage) => {
-            // 官方內部尋找條碼時的訊號，留空不處理即可
-        }
+        (errorMessage) => {}
     );
 });
 
@@ -267,120 +264,3 @@ function renderCollapsedList(snapshot, isPersonal) {
                             <div class="item-amount">$${item.amount}</div>
                         </li>
                     `).join('')}
-                </ul>
-            </div>
-        `;
-    });
-
-    document.getElementById('historyCollapseContainer').innerHTML = mainHTML || '<p style="text-align:center;color:#8e8e93;margin-top:20px;">尚無任何記帳紀錄</p>';
-    return { totalSpent, records, members: Array.from(membersSet) };
-}
-
-// 展開與收折的狀態記憶控制
-window.toggleCollapseVisibility = function(date) {
-    const listEl = document.getElementById(`list-${date}`);
-    const arrowEl = document.getElementById(`arrow-${date}`);
-    
-    if (listEl.style.display === 'none') {
-        listEl.style.display = 'block';
-        arrowEl.innerText = '▲ 收折';
-        if (!expandedDates.includes(date)) expandedDates.push(date);
-    } else {
-        listEl.style.display = 'none';
-        arrowEl.innerText = '▼ 展開';
-        expandedDates = expandedDates.filter(d => d !== date);
-    }
-}
-
-// 監聽個人私帳
-function startListeningPersonal() {
-    const q = query(collection(db, "all_ledgers"), where("mode", "==", "personal"), where("uid", "==", currentUserUid));
-    unsubscribe = onSnapshot(q, (snapshot) => {
-        const { totalSpent } = renderCollapsedList(snapshot, true);
-        document.getElementById('reportCard').innerHTML = `<p style="font-size:16px; font-weight:bold; color:#007aff;">🔒 您的個人累積總消費：$${totalSpent.toFixed(0)} 元</p>`;
-    });
-}
-
-// 監聽群組公帳
-function startListeningGroup() {
-    const targetGroup = document.getElementById('groupCode').value.trim();
-    const q = query(collection(db, "all_ledgers"), where("mode", "==", "group"), where("groupCode", "==", targetGroup));
-    unsubscribe = onSnapshot(q, (snapshot) => {
-        const { totalSpent, records, members } = renderCollapsedList(snapshot, false);
-        if (records.length === 0) { document.getElementById('reportCard').innerHTML = "<p>目前此群組尚無消費紀錄。</p>"; return; }
-        if (members.length <= 1) { document.getElementById('reportCard').innerHTML = `<p><b>群組總花費：</b>$${totalSpent} 元</p>`; return; }
-
-        let paidValues = {}; members.forEach(m => paidValues[m] = 0);
-        records.forEach(r => paidValues[r.payer] += r.amount);
-        let avgShare = totalSpent / members.length;
-        let balances = members.map(m => ({ name: m, net: paidValues[m] - avgShare }));
-        let creditors = balances.filter(b => b.net > 0).sort((a, b) => b.net - a.net);
-        let debtors = balances.filter(b => b.net < 0).sort((a, b) => a.net - b.net);
-
-        let reportHTML = `<p><b>群組總花費：</b>$${totalSpent.toFixed(0)} 元 (每人平均 $${avgShare.toFixed(0)} 元)</p><hr style="margin:8px 0; border-color:#b3d7ff;">`;
-        let lines = []; let i = 0, j = 0;
-        while (i < debtors.length && j < creditors.length) {
-            let debtor = debtors[i]; let creditor = creditors[j];
-            let amountToPay = Math.min(Math.abs(debtor.net), creditor.net);
-            if (amountToPay > 0.1) lines.push(`<div class="settle-line">❌ <b>${debtor.name}</b> 應給 <b>${creditor.name}</b>：<b>$${amountToPay.toFixed(0)}</b> 元</div>`);
-            debtor.net += amountToPay; creditor.net -= amountToPay;
-            if (Math.abs(debtor.net) < 0.1) i++; if (creditor.net < 0.1) j++;
-        }
-        document.getElementById('reportCard').innerHTML = reportHTML + (lines.length ? lines.join('') : "<p>帳目皆清！</p>");
-    });
-}
-
-// 點擊日期勾選框全選
-window.toggleSelectDateGroup = function(date, isChecked) {
-    const checkboxes = document.querySelectorAll(`.item-single-chk[data-date="${date}"]`);
-    checkboxes.forEach(chk => chk.checked = isChecked);
-}
-
-// 連動群組勾選框狀態
-window.checkSingleStatus = function(date) {
-    const totalCount = document.querySelectorAll(`.item-single-chk[data-date="${date}"]`).length;
-    const checkedCount = document.querySelectorAll(`.item-single-chk[data-date="${date}"]:checked`).length;
-    const groupChk = document.querySelector(`.date-group-chk[data-date="${date}"]`);
-    if (groupChk) {
-        groupChk.checked = (totalCount === checkedCount);
-    }
-}
-
-// 🗑️ 功能：刪除選中項目
-document.getElementById('deleteSelectedBtn').addEventListener('click', async () => {
-    const checkedBoxes = document.querySelectorAll('.item-single-chk:checked');
-    if (checkedBoxes.length === 0) { alert('請先勾選你要刪除的記帳項目！'); return; }
-
-    const confirmDelete = confirm(`⚠️ 確定要刪除這 ${checkedBoxes.length} 筆消費紀錄嗎？\n刪除後雲端資料將無法復原！`);
-    if (!confirmDelete) return;
-
-    for (let chk of checkedBoxes) {
-        const id = chk.getAttribute('data-id');
-        try {
-            await deleteDoc(doc(db, "all_ledgers", id));
-        } catch (err) {
-            console.error("刪除失敗ID: " + id, err);
-        }
-    }
-    alert('🎉 選擇的項目已成功從雲端刪除！');
-});
-
-// ⚠️ 功能：清空全部項目
-document.getElementById('deleteAllBtn').addEventListener('click', async () => {
-    if (currentLoadedRecords.length === 0) { alert('目前沒有任何可以刪除的紀錄。'); return; }
-
-    const firstConfirm = confirm(`🚨 警告！你正在執行【全部清空】功能！\n這將會刪除當前畫面上顯示的全部 ${currentLoadedRecords.length} 筆帳目！\n你確定要繼續嗎？`);
-    if (!firstConfirm) return;
-
-    const secondConfirm = confirm(`最後確認：真的要「全數刪除」嗎？此操作不可逆！`);
-    if (!secondConfirm) return;
-
-    for (let record of currentLoadedRecords) {
-        try {
-            await deleteDoc(doc(db, "all_ledgers", record.id));
-        } catch (err) {
-            console.error("刪除失敗", err);
-        }
-    }
-    alert('💥 所有帳目已徹底清空！');
-});
