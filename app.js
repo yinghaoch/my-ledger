@@ -79,90 +79,90 @@ function switchMode(mode) {
     }
 }
 
-// 📷 智慧發票 QR Code 掃描解析（含自動抓取真實商品品名名稱）
+// 📷 修正版：正確初始化並直接 Render 啟動官方大畫面相機視窗
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     readerDiv.style.display = 'block';
 
+    // 1. 如果之前有殘留的 Scanner，先確保乾淨清空
     if (html5QrcodeScanner) {
         html5QrcodeScanner.clear().catch(() => {});
     }
 
+    // 2. 正確建立官方標準控制台執行個體
     html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
         fps: 15, 
         qrbox: (viewfinderWidth, viewfinderHeight) => {
             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-            return { width: Math.floor(minEdge * 0.7), height: Math.floor(minEdge * 0.7) };
+            return { width: Math.floor(minEdge * 0.75), height: Math.floor(minEdge * 0.75) };
         },
         rememberLastUsedCamera: true
     }, false);
 
+    // 3. 呼叫官方標準 .render() 真正把相機「點亮並呈現在網頁畫面上」
     html5QrcodeScanner.render(
         (qrCodeMessage) => {
-            if (qrCodeMessage.length >= 30) {
-                try {
-                    // 1. 使用智慧 Regex 搜尋字串中「連續7位數字」作為日期特徵
-                    const dateMatch = qrCodeMessage.match(/\d{7}/);
-                    if (!dateMatch) {
-                        throw new Error("找不到標準發票日期特徵");
-                    }
+            // 🎯 當相機「真正捕捉並成功回傳字串」時，才觸發內部的防呆解析邏輯
+            if (!qrCodeMessage || qrCodeMessage.length < 30 || !qrCodeMessage.includes(':')) {
+                return; // 如果是一開始晃動抓到的雜訊，直接忽略，不往下跑以免出錯
+            }
 
-                    const dateStr = dateMatch[0];
-                    const twYear = parseInt(dateStr.substring(0, 3), 10);
-                    const year = twYear + 1911;
-                    const month = dateStr.substring(3, 5);
-                    const day = dateStr.substring(5, 7);
+            try {
+                // A. 使用智慧 Regex 撈取連續 7 位數的發票日期特徵 (民國年3碼+月2碼+日2碼)
+                const dateMatch = qrCodeMessage.match(/\d{7}/);
+                if (!dateMatch) return;
 
-                    // 2. 定位金額：從找到的日期位置往後推算 11 碼，切出 8 碼 16 進位金額
-                    const dateIndex = qrCodeMessage.indexOf(dateStr);
-                    const hexAmount = qrCodeMessage.substring(dateIndex + 11, dateIndex + 19);
-                    const amount = parseInt(hexAmount, 16);
+                const dateStr = dateMatch[0];
+                const twYear = parseInt(dateStr.substring(0, 3), 10);
+                const year = twYear + 1911;
+                const month = dateStr.substring(3, 5);
+                const day = dateStr.substring(5, 7);
 
-                    // 安全防呆驗證
-                    if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) {
-                        throw new Error("計算出的日期或金額不合法");
-                    }
+                // B. 安全換算金額位置
+                const dateIndex = qrCodeMessage.indexOf(dateStr);
+                if (dateIndex === -1 || (dateIndex + 19) > qrCodeMessage.length) return;
+                
+                const hexAmount = qrCodeMessage.substring(dateIndex + 11, dateIndex + 19);
+                const amount = parseInt(hexAmount, 16);
 
-                    // 🎯 3. 動態解析品名邏輯：
-                    // 台灣發票格式後半段通常是用冒號（:）隔開商品明細，例如 :1:10:1:108茶王:1:60
-                    // 我們切開所有冒號，尋找不包含純數字、也不是五角星號的「第一個中文字串/商品名稱」
-                    let finalItemName = "電子發票消費"; // 預設防呆備用值
-                    const parts = qrCodeMessage.split(':');
-                    
-                    if (parts.length > 2) {
-                        // 從第三個區段開始尋找可能的品名
-                        for (let i = 2; i < parts.length; i++) {
-                            let p = parts[i].trim();
-                            // 如果這個區段不是純數字、長度大於0、且不是用來遮蔽的星號
-                            if (p && isNaN(p) && !p.includes('***')) {
-                                finalItemName = `發票：${p}`;
-                                break;
-                            }
+                if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) {
+                    return;
+                }
+
+                // C. 解析品名名稱
+                let finalItemName = "電子發票消費"; 
+                const parts = qrCodeMessage.split(':');
+                if (parts && parts.length > 2) {
+                    for (let i = 2; i < parts.length; i++) {
+                        let p = parts[i].trim();
+                        if (p && isNaN(p) && !p.includes('***')) {
+                            finalItemName = `發票：${p}`;
+                            break;
                         }
                     }
-
-                    // 成功解析，自動帶入表單欄位
-                    document.getElementById('dateInput').value = `${year}-${month}-${day}`;
-                    document.getElementById('amountInput').value = amount;
-                    document.getElementById('itemInput').value = finalItemName;
-                    
-                    alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n消費品名: ${finalItemName}\n自動帶入金額: $${amount} 元`);
-                    
-                    // 關閉全螢幕相機視窗並隱藏
-                    html5QrcodeScanner.clear().then(() => {
-                        readerDiv.style.display = 'none';
-                    }).catch(() => {
-                        readerDiv.style.display = 'none';
-                    });
-
-                } catch (err) {
-                    alert("發票條碼解析失敗！請確保對準的是左側那顆「帶有發票號碼」的 QR Code 喔！");
                 }
-            } else {
-                alert("這似乎是右側明細，請改掃發票左邊那顆 QR Code 喔！");
+
+                // D. 填入輸入框表單
+                document.getElementById('dateInput').value = `${year}-${month}-${day}`;
+                document.getElementById('amountInput').value = amount;
+                document.getElementById('itemInput').value = finalItemName;
+                
+                alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n消費品名: ${finalItemName}\n自動帶入金額: $${amount} 元`);
+                
+                // E. 自動關閉相機並隱藏區塊
+                html5QrcodeScanner.clear().then(() => {
+                    readerDiv.style.display = 'none';
+                }).catch(() => {
+                    readerDiv.style.display = 'none';
+                });
+
+            } catch (err) {
+                console.log("過濾無效的掃描訊號:", err);
             }
         },
-        (errorMessage) => {}
+        (errorMessage) => {
+            // 官方內部尋找條碼時的訊號，留空不處理即可
+        }
     );
 });
 
