@@ -6,12 +6,12 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstati
 
 // ⚠️ 請填入你在 Firebase 申請的金鑰
 const firebaseConfig = {
-    apiKey: "請替換成你的API_KEY",
-    authDomain: "你的專案.firebaseapp.com",
-    projectId: "你的專案ID",
-    storageBucket: "你的專案.appspot.com",
-    messagingSenderId: "您的ID",
-    appId: "你的APP_ID"
+    apiKey: "AIzaSyBMYdklxkNrpAiBCQsk6qvRZZ4A2fOcRVw",
+    authDomain: "my-ledger-app-99f5e.firebaseapp.com",
+    projectId: "my-ledger-app-99f5e",
+    storageBucket: "my-ledger-app-99f5e.firebasestorage.app",
+    messagingSenderId: "529103980359",
+    appId: "1:529103980359:web:8907d4d53012f9a6616e62"
 };
 
 const app = initializeApp(firebaseConfig);
