@@ -12,29 +12,43 @@
         <h2>💰 全功能雲端記帳本</h2>
         
         <div id="authArea" class="card bg-light text-center">
-            <p id="welcomeMsg">請先登入以同步您的雲端帳本</p>
-            <button id="loginBtn" class="btn-g">使用 Google 帳號登入</button>
-            <button id="logoutBtn" class="btn-danger" style="display: none;">登出帳號</button>
+            <div id="loginFormArea">
+                <p>請輸入您的使用者名稱以開始記帳</p>
+                <div style="display: flex; gap: 8px; justify-content: center; max-width: 320px; margin: 0 auto;">
+                    <input type="text" id="usernameInput" placeholder="例如：阿明" style="margin-bottom: 0;">
+                    <button id="loginBtn" class="btn-g" style="white-space: nowrap; width: auto;">進入記帳</button>
+                </div>
+            </div>
+            <div id="userInfoArea" style="display: none;">
+                <p id="welcomeMsg">👋 歡迎回來！</p>
+                <button id="logoutBtn" class="btn-danger">切換使用者</button>
+            </div>
         </div>
 
-        <div id="mainApp" style="opacity: 0.3; pointer-events: none; transition: 0.3s;">
+        <div id="mainApp" style="opacity: 0.3; pointer-events: none; transition: 0.3s ripen;">
             
             <div class="tabs">
                 <button id="tabPersonal" class="tab-btn active">🔒 個人私帳</button>
-                <button id="tabGroup" class="tab-btn">👥 群組分帳</button>
+                <button id="tabGroup" class="tab-btn">👥 多人群組分帳</button>
             </div>
 
             <div class="card">
-                <h3 id="currentModeTitle">新增個人消費</h3>
+                <h3 id="currentModeTitle">新增個人消費 (私帳)</h3>
                 
-                <div class="form-group text-center">
-                    <button id="scanInvoiceBtn" class="btn-scan">📷 掃描發票 QR Code 記帳</button>
-                    <div id="reader" style="display: none; width: 100%; margin-top: 10px;"></div>
+                <div id="groupCodeArea" style="display: none;">
+                    <div class="form-group">
+                        <label>群組代號 (房間名稱)：</label>
+                        <input type="text" id="groupCode" placeholder="例如：2026出遊團">
+                    </div>
+                    <div class="form-group">
+                        <label>房間密碼：</label>
+                        <input type="password" id="groupPassword" placeholder="請輸入此房間的通關密碼">
+                    </div>
                 </div>
-                
-                <div class="form-group" id="groupCodeArea" style="display: none;">
-                    <label>群組代碼：</label>
-                    <input type="text" id="groupCode" value="預設群組">
+
+                <div class="form-group" style="text-align: center;">
+                    <button id="scanInvoiceBtn" class="btn-scan">📷 掃描發票 QR Code 自動帶入</button>
+                    <div id="reader" style="width: 100%; max-width: 400px; margin: 10px auto; display: none; border-radius: 8px; overflow: hidden;"></div>
                 </div>
 
                 <div class="form-group">
@@ -42,12 +56,21 @@
                     <input type="date" id="dateInput">
                 </div>
                 <div class="form-group">
-                    <label>花費品名：</label>
-                    <input type="text" id="itemInput" placeholder="例如：午餐、八方">
+                    <label>品名：</label>
+                    <input type="text" id="itemInput" placeholder="例如：午餐、民宿">
                 </div>
                 <div class="form-group">
                     <label>金額：</label>
                     <input type="number" id="amountInput" placeholder="輸入金額">
+                </div>
+                
+                <div class="form-group">
+                    <label>附上照片憑證 (會自動壓縮)：</label>
+                    <input type="file" id="photoInput" accept="image/*">
+                    <div id="previewArea" style="margin-top: 10px; display: none;">
+                        <img id="imgPreview" src="" style="width: 100%; max-height: 150px; object-fit: cover; border-radius: 8px;">
+                        <p id="compressInfo" style="font-size: 11px; color: #8e8e93; margin-top: 2px;"></p>
+                    </div>
                 </div>
 
                 <div class="form-group" id="payerArea" style="display: none;">
@@ -59,21 +82,25 @@
             </div>
 
             <div id="reportArea">
-                <h3>📊 帳目統計 (總覽)</h3>
+                <h3>📊 帳目統計</h3>
                 <div id="reportCard" class="card report-card">
-                    <p>計算中...</p>
+                    <p>請輸入或加入群組密碼以讀取統計...</p>
                 </div>
             </div>
 
-            <h3>📜 歷史明細 (點擊日期可收折)</h3>
-            <div class="delete-toolbar">
-                <button id="deleteSelectedBtn" class="btn-danger btn-toolbar-del">🗑️ 刪除選中項目</button>
-                <button id="deleteAllBtn" class="btn-danger btn-toolbar-del" style="background:#8e8e93;">⚠️ 全部清空</button>
+            <div class="history-title-area">
+                <h3>📜 歷史消費明細</h3>
+                <div class="history-actions">
+                    <button id="deleteSelectedBtn" class="btn-danger-outline">🗑️ 刪除選中</button>
+                    <button id="deleteAllBtn" class="btn-danger-outline" style="background:#ff3b30; color:#fff;">💥 清空全部</button>
+                </div>
             </div>
-            <div id="historyCollapseContainer" style="margin-top: 12px;"></div>
+            
+            <div id="historyCollapseContainer">
+                <p style="text-align:center; color:#8e8e93; margin-top:20px;">載入中...</p>
+            </div>
+
         </div>
     </div>
-
-    <script type="module" src="app.js"></script>
 </body>
 </html>
