@@ -1,0 +1,30 @@
+/* 掃描按鈕專用樣式 */
+.btn-scan {
+    background: #af52de; /* 蘋果紫 */
+    margin-bottom: 10px;
+}
+.btn-scan:active {
+    background: #8930b5;
+}
+
+/* 歷史紀錄裡顯示的小圖片縮圖 */
+.receipt-thumb {
+    width: 50px;
+    height: 50px;
+    object-fit: cover;
+    border-radius: 6px;
+    margin-left: 10px;
+    cursor: pointer;
+    border: 1px solid #e5e5ea;
+}
+
+/* 調整明細內排版，讓圖片能排在右邊 */
+.history-item-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+.history-details {
+    flex: 1;
+}
