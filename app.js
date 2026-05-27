@@ -23,7 +23,7 @@ let unsubscribe = null;
 let html5QrcodeScanner = null;
 let currentLoadedRecords = [];
 
-// 新增：全域管理當前啟用的房間代號
+// 全域管理當前啟用的房間代號
 let activeGroupCode = null;
 
 // 全域記憶哪些日期被手動「展開」了，預設為空（代表初始全部收折）
@@ -42,6 +42,13 @@ onAuthStateChanged(auth, (user) => {
         document.getElementById('logoutBtn').style.display = "block";
         document.getElementById('mainApp').style.opacity = "1";
         document.getElementById('mainApp').style.pointerEvents = "auto";
+        
+        // 💡 新增：登入成功後，嘗試從記憶中載入上一次最後使用的房間
+        const lastCode = localStorage.getItem('lastActiveGroupCode');
+        if (lastCode) {
+            activeGroupCode = lastCode;
+        }
+        
         switchMode(currentMode);
     } else {
         currentUserUid = null;
@@ -60,11 +67,84 @@ document.getElementById('logoutBtn').addEventListener('click', () => signOut(aut
 document.getElementById('tabPersonal').addEventListener('click', () => { expandedDates = []; switchMode('personal'); });
 document.getElementById('tabGroup').addEventListener('click', () => { expandedDates = []; switchMode('group'); });
 
-// 💡 修正：整合新版 index.html 的房間按鈕事件與 UI 邏輯
+// 💡 新增功能：將群組代碼存入歷史清單並儲存
+function saveGroupToHistory(code) {
+    if (!code) return;
+    let history = JSON.parse(localStorage.getItem('groupHistory')) || [];
+    if (!history.includes(code)) {
+        history.push(code);
+        localStorage.setItem('groupHistory', JSON.stringify(history));
+    }
+    localStorage.setItem('lastActiveGroupCode', code); // 記住最後一次啟用的房間
+}
+
+// 💡 新增功能：在界面上渲染歷史群組按鈕清單
+function renderGroupHistoryUI() {
+    let historyContainer = document.getElementById('groupHistoryList');
+    
+    // 如果 HTML 還沒有這個容器，我們動態在 groupCodeArea 裡面補上
+    if (!historyContainer) {
+        const groupCodeArea = document.getElementById('groupCodeArea');
+        if (groupCodeArea) {
+            const historyDiv = document.createElement('div');
+            historyDiv.style.marginTop = "14px";
+            historyDiv.style.paddingTop = "10px";
+            historyDiv.style.borderTop = "1px dashed #e5e5ea";
+            historyDiv.innerHTML = `
+                <label style="font-size: 13px; color: #8e8e93; margin-bottom: 6px; display: block;">快速切換歷史房間：</label>
+                <div id="groupHistoryList" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+            `;
+            groupCodeArea.appendChild(historyDiv);
+            historyContainer = document.getElementById('groupHistoryList');
+        }
+    }
+
+    if (!historyContainer) return;
+
+    let history = JSON.parse(localStorage.getItem('groupHistory')) || [];
+    if (history.length === 0) {
+        historyContainer.innerHTML = `<span style="font-size: 13px; color: #bcbcbf;">暫無加入歷史紀錄</span>`;
+        return;
+    }
+
+    let buttonsHtml = "";
+    history.forEach(code => {
+        // 如果是當前連線房間，樣式弄成深色 active 狀態
+        const isActive = (code === activeGroupCode);
+        const btnStyle = isActive 
+            ? "background: #5856d6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer;"
+            : "background: #e5e5ea; color: #1c1c1e; border: none; padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;";
+        
+        buttonsHtml += `<button type="button" class="history-room-btn" data-code="${code}" style="${btnStyle}">🏠 房間 ${code}</button>`;
+    });
+    historyContainer.innerHTML = buttonsHtml;
+
+    // 綁定歷史按鈕點擊事件
+    document.querySelectorAll('.history-room-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const selectedCode = e.target.getAttribute('data-code');
+            activeGroupCode = selectedCode;
+            localStorage.setItem('lastActiveGroupCode', selectedCode);
+            updateGroupUIState();
+            if (currentMode === 'group') { expandedDates = []; startListeningGroup(); }
+        });
+    });
+}
+
+// 整合新版 index.html 的房間按鈕事件與 UI 邏輯
 function updateGroupUIState() {
     const statusEl = document.getElementById('currentGroupStatus');
     const leaveBtn = document.getElementById('leaveGroupBtn');
     const groupInput = document.getElementById('groupCode');
+    
+    // 💡 修正：將輸入框的 input 屬性限制為只能輸入數字
+    if (groupInput) {
+        groupInput.type = "text";
+        groupInput.pattern = "[0-9]*";
+        groupInput.inputMode = "numeric";
+        groupInput.maxLength = 4;
+        groupInput.placeholder = "請輸入 4 碼數字";
+    }
     
     if (activeGroupCode) {
         if (statusEl) statusEl.innerText = `當前狀態：已連線房間【${activeGroupCode}】`;
@@ -75,31 +155,34 @@ function updateGroupUIState() {
         if (leaveBtn) leaveBtn.style.display = "none";
         if (groupInput) { groupInput.disabled = false; groupInput.value = ""; }
     }
+
+    // 💡 每次更新狀態都同步刷新歷史清單 UI
+    renderGroupHistoryUI();
 }
 
 // 💡 修正：綁定「加入房間」按鈕
 const joinGroupBtn = document.getElementById('joinGroupBtn');
 if (joinGroupBtn) {
     joinGroupBtn.addEventListener('click', () => {
-        const code = document.getElementById('groupCode').value.trim().toUpperCase();
-        if (code.length !== 4) { alert('請輸入完整的 4 碼房間代碼！'); return; }
+        const code = document.getElementById('groupCode').value.trim();
+        // 💡 修正：驗證改為 4 碼純數字
+        if (!/^\d{4}$/.test(code)) { alert('請輸入正確的 4 碼純數字房間代碼！'); return; }
         activeGroupCode = code;
+        saveGroupToHistory(code); // 紀錄到歷史中
         updateGroupUIState();
         if (currentMode === 'group') { expandedDates = []; startListeningGroup(); }
     });
 }
 
-// 💡 修正：綁定「建立新群組房間」按鈕
+// 💡 修正：綁定「建立新群組房間」按鈕（產生 4 碼純數字）
 const createGroupBtn = document.getElementById('createGroupBtn');
 if (createGroupBtn) {
     createGroupBtn.addEventListener('click', () => {
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        let code = '';
-        for (let i = 0; i < 4; i++) {
-            code += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
+        // 💡 修正：生成 0000 ~ 9999 之間的 4 碼數字
+        let code = Math.floor(1000 + Math.random() * 9000).toString();
         activeGroupCode = code;
-        alert(`🎉 成功建立群組房間！房間代號為：【${code}】\n請將代號分享給朋友，即可同步記帳！`);
+        saveGroupToHistory(code); // 紀錄到歷史中
+        alert(`🎉 成功建立群組房間！房間代號為：【${code}】\n請將這 4 碼數字分享給朋友，即可同步記帳！`);
         updateGroupUIState();
         if (currentMode === 'group') { expandedDates = []; startListeningGroup(); }
     });
@@ -109,8 +192,9 @@ if (createGroupBtn) {
 const leaveGroupBtn = document.getElementById('leaveGroupBtn');
 if (leaveGroupBtn) {
     leaveGroupBtn.addEventListener('click', () => {
-        if (confirm('🚪 確定要退出當前群組房間嗎？')) {
+        if (confirm('🚪 確定要斷開當前群組房間的連線嗎？（不會清除歷史清單）')) {
             activeGroupCode = null;
+            localStorage.removeItem('lastActiveGroupCode'); // 移除最後一次使用的記憶
             updateGroupUIState();
             if (currentMode === 'group') { expandedDates = []; startListeningGroup(); }
         }
@@ -226,7 +310,6 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     
     if (!item || !amount || !date) { alert('請填寫完整的日期、品名與金額！'); return; }
     
-    // 💡 修正：群組防呆改用全域的 activeGroupCode 來驗證
     if (currentMode === 'group' && !activeGroupCode) { 
         alert('請先在房間管理內「建立房間」或「加入房間」！'); 
         return; 
@@ -240,7 +323,6 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     if (currentMode === 'personal') {
         newRecord.uid = currentUserUid;
     } else {
-        // 💡 修正：使用全域連線成功的代碼與付款人欄位邏輯
         newRecord.groupCode = activeGroupCode;
         let payer = document.getElementById('payerInput').value.trim();
         newRecord.payer = payer ? payer : currentUserName;
@@ -277,7 +359,6 @@ function startListeningPersonal() {
 
 // 核心：群組資料監聽 (對應 activeGroupCode)
 function startListeningGroup() {
-    // 💡 修正：如果尚未登入房間，優雅顯示提示訊息
     if (!activeGroupCode) {
         document.getElementById('historyCollapseContainer').innerHTML = `<p style="text-align: center; color: #8e8e93; margin-top: 20px;">請先在上方房間連線管理輸入 4 碼代號加入或建立房間</p>`;
         document.getElementById('reportCard').innerHTML = `<p>⚠️ 尚未連線任何群組房間</p>`;
@@ -306,7 +387,7 @@ function renderData() {
 
     if (currentLoadedRecords.length === 0) {
         container.innerHTML = `<p style="text-align: center; color: #8e8e93; margin-top: 20px;">目前尚無任何消費紀錄</p>`;
-        reportCard.innerHTML = `<p>💰 目前無任何消費，總金額為 $0 元。</p>`;
+        reportCard.innerHTML = `<p>💰 目前無 any 消費，總金額為 $0 元。</p>`;
         return;
     }
 
