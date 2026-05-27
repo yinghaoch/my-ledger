@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBMYdklxkNrpAiBCQsk6qvRZZ4A2fOcRVw",
@@ -14,6 +15,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
+const storage = getStorage(app); // 補回您原本的 storage 宣告
 const provider = new GoogleAuthProvider();
 
 let currentUserUid = null;
@@ -53,15 +55,23 @@ onAuthStateChanged(auth, (user) => {
     }
 });
 
-// 登入登出
+// 修正：使用您原本最正常的彈出視窗登入 (signInWithPopup)
 document.getElementById('loginBtn').addEventListener('click', () => {
-    signInWithPopup(auth, provider).catch(err => console.error("登入失敗", err));
+    signInWithPopup(auth, provider)
+        .then((result) => {
+            console.log("登入成功:", result.user);
+        })
+        .catch((err) => {
+            console.error("登入失敗:", err);
+            alert("登入失敗，請稍後再試！原因：" + err.message);
+        });
 });
+
 document.getElementById('logoutBtn').addEventListener('click', () => {
     signOut(auth).then(() => window.location.reload());
 });
 
-// === 📷 QR Code 掃描器 (保持原功能) ===
+// === 📷 QR Code 掃描器 ===
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     if (html5QrcodeScanner && readerDiv.style.display === 'block') { cleanupScanner(); return; }
@@ -136,16 +146,14 @@ document.getElementById('createGroupBtn').addEventListener('click', async () => 
         let isUnique = false;
         let attempts = 0;
 
-        // 智慧防撞：迴圈確保生成的 4 碼數字在雲端不重複
         while (!isUnique && attempts < 10) {
-            code = Math.floor(1000 + Math.random() * 9000).toString(); // 生成 1000~9999 之間的四位數
+            code = Math.floor(1000 + Math.random() * 9000).toString();
             const q = query(collection(db, "group_rooms"), where("groupCode", "==", code));
             const snap = await getDocs(q);
             if (snap.empty) { isUnique = true; }
             attempts++;
         }
 
-        // 將新房間註冊到 Firestore
         await addDoc(collection(db, "group_rooms"), {
             groupCode: code,
             groupName: gName.trim(),
@@ -155,7 +163,6 @@ document.getElementById('createGroupBtn').addEventListener('click', async () => 
 
         alert(`🎉 群組建立成功！\n群組名稱：${gName}\n群組代號：【 ${code} 】\n快把代號複製分享給朋友吧！`);
         
-        // 建立完自動進入該房間
         activeGroupCode = code;
         activeGroupName = gName.trim();
         document.getElementById('groupCode').value = code;
@@ -187,7 +194,6 @@ document.getElementById('joinGroupBtn').addEventListener('click', async () => {
             return;
         }
 
-        // 撈出對應的群組名稱
         let targetRoom = snap.docs[0].data();
         activeGroupCode = codeInput;
         activeGroupName = targetRoom.groupName;
@@ -219,14 +225,10 @@ function updateGroupUIState() {
     if (unsubscribe) unsubscribe();
 
     if (activeGroupCode) {
-        // 已有指定房間狀態
         document.getElementById('currentGroupStatus').innerHTML = `🟢 目前所在群組：<b style="color:#34c759;">${activeGroupName}</b> (代號:${activeGroupCode})`;
         document.getElementById('leaveGroupBtn').style.display = "block";
-        
-        // 啟動實時同步房間資料
         startListeningGroup(activeGroupCode, activeGroupName);
     } else {
-        // 未進房狀態
         document.getElementById('currentGroupStatus').innerText = "❌ 當前狀態：尚未進入任何群組房間";
         document.getElementById('leaveGroupBtn').style.display = "none";
         document.getElementById('reportCard').innerHTML = "<p style='color:#8e8e93;'>🔑 請在上方「輸入4碼代號」加入房間，或點擊「建立新群組」以啟動多人群組分帳。</p>";
@@ -261,7 +263,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     };
 
     if (currentMode === 'group') {
-        newRecord.groupCode = activeGroupCode; // 綁定目前的 4 碼代號房間
+        newRecord.groupCode = activeGroupCode;
         let customPayer = document.getElementById('payerInput').value.trim();
         newRecord.payer = customPayer ? customPayer : currentUserName;
     }
@@ -278,7 +280,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     }
 });
 
-// === 📜 渲染歷史明細清單 (與先前結構相同) ===
+// === 📜 渲染歷史明細清單 ===
 function renderCollapsedList(snapshot, isPersonal) {
     let totalSpent = 0;
     let records = [];
@@ -370,7 +372,7 @@ function startListeningPersonal() {
     });
 }
 
-// === 🔄 實時監聽：多人群組模式 (依照隨機房號隔離連線) ===
+// === 🔄 實時監聽：多人群組模式 ===
 function startListeningGroup(targetCode, targetName) {
     const q = query(collection(db, "all_ledgers"), where("mode", "==", "group"), where("groupCode", "==", targetCode));
     unsubscribe = onSnapshot(q, (snapshot) => {
@@ -391,7 +393,6 @@ function startListeningGroup(targetCode, targetName) {
             return;
         }
 
-        // 雙指標最佳化分帳核心
         let paidValues = {}; members.forEach(m => paidValues[m] = 0);
         records.forEach(r => paidValues[r.payer || r.payerName] += r.amount);
         let avgShare = totalSpent / members.length;
@@ -421,7 +422,7 @@ function startListeningGroup(targetCode, targetName) {
     });
 }
 
-// === 複選框與項目刪除清空邏輯 (保持原功能不變) ===
+// === 複選框與項目刪除清空邏輯 ===
 window.toggleSelectDateGroup = function(date, isChecked) { document.querySelectorAll(`.item-single-chk[data-date="${date}"]`).forEach(chk => chk.checked = isChecked); }
 window.checkSingleStatus = function(date) {
     const totalCount = document.querySelectorAll(`.item-single-chk[data-date="${date}"]`).length;
@@ -432,7 +433,7 @@ window.checkSingleStatus = function(date) {
 document.getElementById('deleteSelectedBtn').addEventListener('click', async () => {
     const checkedBoxes = document.querySelectorAll('.item-single-chk:checked');
     if (checkedBoxes.length === 0) { alert('請先勾選項目！'); return; }
-    if (!confirm(`確定要刪除這 ${checkedBoxes.length} 筆消費紀錄嗎？`)) return;
+    if (!confirm(`⚠️ 確定要刪除這 ${checkedBoxes.length} 筆消費紀錄嗎？`)) return;
     for (let chk of checkedBoxes) { try { await deleteDoc(doc(db, "all_ledgers", chk.getAttribute('data-id'))); } catch (err) { console.error(err); } }
     alert('🎉 選擇的項目已成功從雲端刪除！');
 });
