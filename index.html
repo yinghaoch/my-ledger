@@ -4,87 +4,35 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>全功能雲端記帳本</title>
+    
+    <script>
+        (function() {
+            var ua = navigator.userAgent || navigator.vendor || window.opera;
+            var url = window.location.href;
+
+            // 偵測是否在 LINE 內置瀏覽器中
+            if (ua.indexOf("Line") > -1) {
+                // 🍏 Android 專用跳出 LINE 語法
+                if (ua.indexOf("Android") > -1) {
+                    if (url.indexOf("openExternalBrowser=1") === -1) {
+                        var newUrl = url + (url.indexOf("?") > -1 ? "&" : "?") + "openExternalBrowser=1";
+                        window.location.href = newUrl;
+                    }
+                } 
+                // 🍎 iOS (iPhone) 專用跳出 LINE 語法
+                else if (ua.indexOf("iPhone") > -1 || ua.indexOf("iPad") > -1 || ua.indexOf("iPod") > -1) {
+                    // 如果網址後面還沒有加這個特殊參數，就帶有這參數重導向，LINE 偵測到此參數在 iOS 會強制用 Safari 打開
+                    if (url.indexOf("openExternalBrowser=1") === -1) {
+                        var newUrl = url + (url.indexOf("?") > -1 ? "&" : "?") + "openExternalBrowser=1";
+                        // 嘗試用 LINE 官方支援的外部瀏覽器重導向網址
+                        window.location.href = newUrl;
+                    }
+                }
+            }
+        })();
+    </script>
+
     <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
-    <div class="container">
-        <h2>💰 全功能雲端記帳本</h2>
-        
-        <div id="authArea" class="card bg-light text-center">
-            <p id="welcomeMsg">請先登入以同步您的雲端帳本</p>
-            <button id="loginBtn" class="btn-g">使用 Google 帳號登入</button>
-            <button id="logoutBtn" class="btn-danger" style="display: none;">登出帳號</button>
-        </div>
-
-        <div id="mainApp" style="opacity: 0.3; pointer-events: none; transition: 0.3s;">
-            
-            <div class="tabs">
-                <button id="tabPersonal" class="tab-btn active">🔒 個人私帳</button>
-                <button id="tabGroup" class="tab-btn">👥 多人群組分帳</button>
-            </div>
-
-            <div class="card">
-                <h3 id="currentModeTitle">新增個人消費 (私帳)</h3>
-                
-                <div class="form-group text-center">
-                    <button id="scanInvoiceBtn" class="btn-scan">📷 掃描發票 QR Code 記帳</button>
-                    <div id="reader" style="display: none; width: 100%; max-width: 400px; margin: 10px auto; border-radius: 8px; overflow: hidden;"></div>
-                </div>
-                
-                <div id="groupCodeArea" style="display: none;">
-                    <div class="form-group">
-                        <label>群組代碼 (房間名稱)：</label>
-                        <input type="text" id="groupCode" placeholder="例如：2026出遊團">
-                    </div>
-                    <div class="form-group">
-                        <label>房間密碼：</label>
-                        <input type="password" id="groupPassword" placeholder="請輸入此房間的通關密碼">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>消費日期：</label>
-                    <input type="date" id="dateInput">
-                </div>
-                <div class="form-group">
-                    <label>花費品名：</label>
-                    <input type="text" id="itemInput" placeholder="例如：午餐、民宿">
-                </div>
-                <div class="form-group">
-                    <label>金額：</label>
-                    <input type="number" id="amountInput" placeholder="輸入金額">
-                </div>
-
-                <div class="form-group" id="payerArea" style="display: none;">
-                    <label>誰墊的錢？</label>
-                    <input type="text" id="payerInput" placeholder="留空預設為你自己">
-                </div>
-
-                <button id="saveBtn">儲存至雲端</button>
-            </div>
-
-            <div id="reportArea">
-                <h3>📊 帳目統計</h3>
-                <div id="reportCard" class="card report-card">
-                    <p>計算中...</p>
-                </div>
-            </div>
-
-            <div class="history-title-area" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
-                <h3>📜 歷史消費明細</h3>
-                <div class="history-actions">
-                    <button id="deleteSelectedBtn" style="background: none; border: 1px solid #ff3b30; color: #ff3b30; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">🗑️ 刪除選中</button>
-                    <button id="deleteAllBtn" style="background: #ff3b30; border: none; color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 5px;">💥 清空全部</button>
-                </div>
-            </div>
-            
-            <div id="historyCollapseContainer">
-                <p style="text-align:center; color:#8e8e93; margin-top:20px;">載入中...</p>
-            </div>
-        </div>
-    </div>
-
-    <script type="module" src="app.js"></script>
-</body>
-</html>
