@@ -21,9 +21,11 @@ let currentUserName = "";
 let currentMode = "personal";
 let unsubscribe = null;
 let html5QrcodeScanner = null;
+
+// 全域紀錄當前加載的所有明細，用於刪除邏輯
 let currentLoadedRecords = [];
 
-// 初始化填入今日日期
+// 初始化日期
 document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
 
 // 登入狀態監聽
@@ -76,7 +78,7 @@ function switchMode(mode) {
     }
 }
 
-// 📷 修正後的發票 QR Code 掃描與高速辨識對焦邏輯
+// 📷 掃描邏輯保持
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     if (readerDiv.style.display === 'none') {
@@ -84,48 +86,23 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
         html5QrcodeScanner = new Html5Qrcode("reader");
         html5QrcodeScanner.start(
             { facingMode: "environment" },
-            { 
-                fps: 15, // 提高偵率讓辨識更流暢
-                qrbox: function(viewfinderWidth, viewfinderHeight) {
-                    // 動態計算對焦框大小，方便大眾對準發票
-                    const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                    return { width: Math.floor(minEdge * 0.7), height: Math.floor(minEdge * 0.7) };
-                },
-                experimentalFeatures: { useBarCodeDetectorIfSupported: true } // 啟用硬體加速
-            },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
             (qrCodeMessage) => {
-                // 台灣電子發票左側 QR Code 字串長度通常大於等於 30 碼
                 if (qrCodeMessage.length >= 30) {
-                    try {
-                        // 精準解析你提供的範例格式：BP25966064 1150526 4174 000001f6 ...
-                        // 10 到 13 碼為民國年 (例如 115)
-                        const twYear = parseInt(qrCodeMessage.substring(10, 13), 10);
-                        const year = twYear + 1911;
-                        
-                        // 月份與日期
-                        const month = qrCodeMessage.substring(13, 15);
-                        const day = qrCodeMessage.substring(15, 17);
-                        
-                        // 金額位置：第 21 到 29 碼為 16 進位金額字串 (共 8 碼)
-                        const hexAmount = qrCodeMessage.substring(21, 29);
-                        const amount = parseInt(hexAmount, 16);
+                    const year = parseInt(qrCodeMessage.substring(10, 13)) + 1911;
+                    const month = qrCodeMessage.substring(13, 15);
+                    const day = qrCodeMessage.substring(15, 17);
+                    const hexAmount = qrCodeMessage.substring(17, 25);
+                    const amount = parseInt(hexAmount, 16);
 
-                        if (isNaN(year) || isNaN(amount)) {
-                            throw new Error("格式解析失敗");
-                        }
-
-                        // 自動帶入表單
-                        document.getElementById('dateInput').value = `${year}-${month}-${day}`;
-                        document.getElementById('amountInput').value = amount;
-                        document.getElementById('itemInput').value = "電子發票消費";
-                        
-                        alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n自動帶入金額: $${amount} 元`);
-                        stopScanner();
-                    } catch (err) {
-                        alert("能讀取條碼，但解析發票內容出錯了，請嘗試掃描發票的另一顆 QR Code！");
-                    }
+                    document.getElementById('dateInput').value = `${year}-${month}-${day}`;
+                    document.getElementById('amountInput').value = amount;
+                    document.getElementById('itemInput').value = "電子發票花費";
+                    
+                    alert(`🎉 掃描成功！自動帶入金額: $${amount}`);
+                    stopScanner();
                 } else {
-                    alert("這似乎是右側明細條碼，請對準左側帶有發票號碼的那顆 QR Code 喔！");
+                    alert("這似乎不是標準的台灣電子發票左側 QR Code！");
                 }
             },
             (errorMessage) => {}
@@ -138,8 +115,6 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
 function stopScanner() {
     if (html5QrcodeScanner) {
         html5QrcodeScanner.stop().then(() => {
-            document.getElementById('reader').style.display = 'none';
-        }).catch(()=>{
             document.getElementById('reader').style.display = 'none';
         });
     }
@@ -185,7 +160,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     }
 });
 
-// 🔄 核心邏輯：日期歸納收折、當日總計運算、預設【全部收折】狀態
+// 🔄 核心邏輯：日期歸納收折、當日總計運算、動態綁定勾選事件
 function renderCollapsedList(snapshot, isPersonal) {
     let totalSpent = 0;
     let records = [];
@@ -193,45 +168,50 @@ function renderCollapsedList(snapshot, isPersonal) {
     
     snapshot.forEach((doc) => {
         let data = doc.data();
-        data.id = doc.id;
+        data.id = doc.id; // 綁定 Firebase 的隨機 ID 供刪除使用
         records.push(data);
     });
 
+    // 依時間戳降序排列
     records.sort((a, b) => b.timestamp - a.timestamp);
-    currentLoadedRecords = records;
+    currentLoadedRecords = records; // 緩存供刪除工具列調用
 
+    // 依照「日期 (YYYY-MM-DD)」群組化
     let groupedByDate = {};
     records.forEach(r => {
         totalSpent += r.amount;
         if (!isPersonal) membersSet.add(r.payer);
 
         if (!groupedByDate[r.date]) {
-            groupedByDate[r.date] = { dayTotal: 0, items: [] };
+            groupedByDate[r.date] = {
+                dayTotal: 0,
+                items: []
+            };
         }
         groupedByDate[r.date].dayTotal += r.amount;
         groupedByDate[r.date].items.push(r);
     });
 
+    // 排序日期（由新到舊）
     let sortedDates = Object.keys(groupedByDate).sort((a, b) => new Date(b) - new Date(a));
 
     let mainHTML = '';
-    sortedDates.forEach((date) => {
+    sortedDates.forEach((date, index) => {
         let group = groupedByDate[date];
         
-        // 🔒 關鍵改動：將 <ul> 的 style 改為 display: none 讓它預設全部收折起來
-        // 並且在箭頭符號提示改為「▼ 展開」，點擊時動態切換
+        // 建立日期的大外殼（摺疊面板）
         mainHTML += `
             <div class="date-group" id="group-${date}">
-                <div class="date-header" onclick="toggleCollapseVisibility('${date}')">
+                <div class="date-header" onclick="document.getElementById('list-${date}').style.display = document.getElementById('list-${date}').style.display === 'none' ? 'block' : 'none'">
                     <div class="date-title-left">
                         <input type="checkbox" class="date-group-chk" data-date="${date}" onclick="event.stopPropagation(); toggleSelectDateGroup('${date}', this.checked)">
                         <span>📅 ${date}</span>
                     </div>
                     <div class="date-total-right">
-                        <span>當日總計: <b>$${group.dayTotal.toFixed(0)}</b> 元 <span id="arrow-${date}">▼ 展開</span></span>
+                        <span>當日總計: <b>$${group.dayTotal.toFixed(0)}</b> 元 ➔</span>
                     </div>
                 </div>
-                <ul class="item-list" id="list-${date}" style="display: none;">
+                <ul class="item-list" id="list-${date}" style="display: block;">
                     ${group.items.map(item => `
                         <li>
                             <div class="item-left">
@@ -251,19 +231,6 @@ function renderCollapsedList(snapshot, isPersonal) {
 
     document.getElementById('historyCollapseContainer').innerHTML = mainHTML || '<p style="text-align:center;color:#8e8e93;margin-top:20px;">尚無任何記帳紀錄</p>';
     return { totalSpent, records, members: Array.from(membersSet) };
-}
-
-// 展開與收折的動態切換函式
-window.toggleCollapseVisibility = function(date) {
-    const listEl = document.getElementById(`list-${date}`);
-    const arrowEl = document.getElementById(`arrow-${date}`);
-    if (listEl.style.display === 'none') {
-        listEl.style.display = 'block';
-        arrowEl.innerText = '▲ 收折';
-    } else {
-        listEl.style.display = 'none';
-        arrowEl.innerText = '▼ 展開';
-    }
 }
 
 // 監聽個人私帳
@@ -304,13 +271,13 @@ function startListeningGroup() {
     });
 }
 
-// 點擊日期勾選框，自動全選/全不選該日期的細項
+// 🌟 全域防呆控制：點擊日期勾選框，自動全選/全不選該日期的細項
 window.toggleSelectDateGroup = function(date, isChecked) {
     const checkboxes = document.querySelectorAll(`.item-single-chk[data-date="${date}"]`);
     checkboxes.forEach(chk => chk.checked = isChecked);
 }
 
-// 當單筆細項全部被手動取消時，自動取消日期的全選框
+// 🌟 全域防呆控制：當單筆細項全部被手動取消時，自動取消日期的全選框
 window.checkSingleStatus = function(date) {
     const totalCount = document.querySelectorAll(`.item-single-chk[data-date="${date}"]`).length;
     const checkedCount = document.querySelectorAll(`.item-single-chk[data-date="${date}"]:checked`).length;
@@ -320,7 +287,7 @@ window.checkSingleStatus = function(date) {
     }
 }
 
-// 🗑️ 功能：刪除選中項目 (含確認視窗)
+// 🗑️ 功能：刪除選中項目 (含二次確認視窗)
 document.getElementById('deleteSelectedBtn').addEventListener('click', async () => {
     const checkedBoxes = document.querySelectorAll('.item-single-chk:checked');
     if (checkedBoxes.length === 0) { alert('請先勾選你要刪除的記帳項目！'); return; }
@@ -339,11 +306,11 @@ document.getElementById('deleteSelectedBtn').addEventListener('click', async () 
     alert('🎉 選擇的項目已成功從雲端刪除！');
 });
 
-// ⚠️ 功能：清空全部項目
+// ⚠️ 功能：清空全部項目 (含超嚴格二次確認視窗)
 document.getElementById('deleteAllBtn').addEventListener('click', async () => {
     if (currentLoadedRecords.length === 0) { alert('目前沒有任何可以刪除的紀錄。'); return; }
 
-    const firstConfirm = confirm(`🚨 警告！你正在執行【全部清空】功能！\n這將會刪除當前畫面上顯示的全部 ${currentLoadedRecords.length} 筆帳目！\n你確定要繼續嗎？`);
+    const firstConfirm = confirm(`🚨🚨🚨 警告！你正在執行【全部清空】功能！\n這將會刪除當前畫面上顯示的全部 ${currentLoadedRecords.length} 筆帳目！\n你確定要繼續嗎？`);
     if (!firstConfirm) return;
 
     const secondConfirm = confirm(`最後確認：真的要「全數刪除」嗎？此操作不可逆！`);
