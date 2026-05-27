@@ -14,7 +14,7 @@
         <div id="authArea" class="card bg-light text-center">
             <p id="welcomeMsg">請先登入以同步您的雲端帳本</p>
             <button id="loginBtn" class="btn-g">使用 Google 帳號登入</button>
-            <button id="logoutBtn" class="btn-danger" style="display: none;">登出帳號</button>
+            <button id="logoutBtn" class="btn-danger" style="display: none;\">登出帳號</button>
         </div>
 
         <div id="mainApp" style="opacity: 0.3; pointer-events: none; transition: 0.3s;">
@@ -24,18 +24,27 @@
                 <button id="tabGroup" class="tab-btn">👥 群組分帳</button>
             </div>
 
+            <div id="groupCodeArea" class="card" style="display: none; background: #f9f9fc; border: 1px dashed #5856d6;">
+                <h4 style="margin: 0 0 10px 0; color: #5856d6;">🏠 房間連線管理</h4>
+                
+                <p id="currentGroupStatus" style="font-size: 14px; margin: 5px 0 12px 0; color: #8e8e93;">當前狀態：尚未進入任何群組房間</p>
+                
+                <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                    <input type="text" id="groupCode" placeholder="請輸入4碼群組代號" maxlength="4" style="flex: 2; padding: 8px; border: 1px solid #c7c7cc; border-radius: 6px; text-align: center; font-size: 16px; font-weight: bold; letter-spacing: 2px;">
+                    <button id="joinGroupBtn" style="flex: 1; background: #5856d6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">加入房間</button>
+                </div>
+                
+                <div style="display: flex; gap: 8px;">
+                    <button id="createGroupBtn" style="flex: 1; background: #34c759; color: white; border: none; border-radius: 6px; padding: 8px; cursor: pointer; font-size: 13px; font-weight: bold;">➕ 建立新群組房間</button>
+                    <button id="leaveGroupBtn" style="flex: 1; background: #ff3b30; color: white; border: none; border-radius: 6px; padding: 8px; cursor: pointer; font-size: 13px; font-weight: bold; display: none;">🚪 退出當前群組</button>
+                </div>
+            </div>
+
             <div class="card">
                 <h3 id="currentModeTitle">新增個人消費</h3>
                 
-                <div class="form-group text-center">
-                    <button id="scanInvoiceBtn" class="btn-scan">📷 掃描發票 QR Code 記帳</button>
-                    <div id="reader" style="display: none; width: 100%; margin-top: 10px;"></div>
-                </div>
-                
-                <div class="form-group" id="groupCodeArea" style="display: none;">
-                    <label>群組代碼：</label>
-                    <input type="text" id="groupCode" value="預設群組">
-                </div>
+                <button id="scanInvoiceBtn" class="btn-scan">📷 掃描發票 QR Code 記帳</button>
+                <div id="reader" style="display: none; width: 100%; max-width: 350px; margin: 0 auto 10px auto;"></div>
 
                 <div class="form-group">
                     <label>消費日期：</label>
@@ -70,10 +79,12 @@
                 <button id="deleteSelectedBtn" class="btn-danger btn-toolbar-del">🗑️ 刪除選中項目</button>
                 <button id="deleteAllBtn" class="btn-danger btn-toolbar-del" style="background:#8e8e93;">⚠️ 全部清空</button>
             </div>
-            <div id="historyCollapseContainer" style="margin-top: 12px;"></div>
+
+            <div id="historyCollapseContainer">
+                <p style="text-align: center; color: #8e8e93; margin-top: 20px;">載入中...</p>
+            </div>
+
         </div>
     </div>
-
-    <script type="module" src="app.js"></script>
 </body>
 </html>
