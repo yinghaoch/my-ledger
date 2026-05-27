@@ -79,15 +79,17 @@ function switchMode(mode) {
     }
 }
 
-// 📷 智慧發票 QR Code 掃描解析（徹底加入防呆，杜絕晃動卡死錯誤）
+// 📷 還原「全螢幕彈窗帶有關閉按鈕」的官方 Scanner 模式，並升級智慧 Regex 辨識
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     readerDiv.style.display = 'block';
 
+    // 如果之前有殘留的 Scanner，先清空它
     if (html5QrcodeScanner) {
         html5QrcodeScanner.clear().catch(() => {});
     }
 
+    // 使用官方標準介面：會自動在上方產生關閉按鈕，並提供全螢幕對焦框
     html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
         fps: 15, 
         qrbox: (viewfinderWidth, viewfinderHeight) => {
@@ -99,70 +101,52 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
 
     html5QrcodeScanner.render(
         (qrCodeMessage) => {
-            // 🚨 強大安全鎖：如果長度不夠、或者不是發票格式(沒包含冒號)，直接視為無效晃動雜訊，跳過不處理！
-            if (!qrCodeMessage || qrCodeMessage.length < 30 || !qrCodeMessage.includes(':')) {
-                return; 
-            }
-
-            try {
-                // 1. 使用智慧 Regex 搜尋字串中「連續7位數字」作為日期特徵
-                const dateMatch = qrCodeMessage.match(/\d{7}/);
-                if (!dateMatch) {
-                    throw new Error("找不到標準發票日期特徵");
-                }
-
-                const dateStr = dateMatch[0];
-                const twYear = parseInt(dateStr.substring(0, 3), 10);
-                const year = twYear + 1911;
-                const month = dateStr.substring(3, 5);
-                const day = dateStr.substring(5, 7);
-
-                // 2. 定位金額：從找到的日期位置往後推算 11 碼，切出 8 碼 16 進位金額
-                const dateIndex = qrCodeMessage.indexOf(dateStr);
-                if (dateIndex === -1 || (dateIndex + 19) > qrCodeMessage.length) {
-                    throw new Error("字串長度不足以切出金額位置");
-                }
-                
-                const hexAmount = qrCodeMessage.substring(dateIndex + 11, dateIndex + 19);
-                const amount = parseInt(hexAmount, 16);
-
-                // 安全防呆驗證
-                if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) {
-                    throw new Error("計算出的日期或金額不合法");
-                }
-
-                // 3. 動態解析品名邏輯（防卡死加固版）：
-                let finalItemName = "電子發票消費"; 
-                const parts = qrCodeMessage.split(':');
-                
-                if (parts && parts.length > 2) {
-                    for (let i = 2; i < parts.length; i++) {
-                        let p = parts[i].trim();
-                        // 排除純數字、空值、以及星號遮蔽區段，抓出第一個中文字串
-                        if (p && isNaN(p) && !p.includes('***')) {
-                            finalItemName = `發票：${p}`;
-                            break;
-                        }
+            if (qrCodeMessage.length >= 30) {
+                try {
+                    // 🎯 升級：使用智慧 Regex 搜尋字串中「連續7位數字」作為日期特徵 (3碼民國年 + 2碼月 + 2碼日)
+                    // 例如從 BP259660641150526... 中精準定位出 "1150526"
+                    const dateMatch = qrCodeMessage.match(/\d{7}/);
+                    if (!dateMatch) {
+                        throw new Error("找不到標準發票日期特徵");
                     }
+
+                    const dateStr = dateMatch[0];
+                    const twYear = parseInt(dateStr.substring(0, 3), 10);
+                    const year = twYear + 1911;
+                    const month = dateStr.substring(3, 5);
+                    const day = dateStr.substring(5, 7);
+
+                    // 定位金額：緊接在 7 位日期後面的 8 位隨機碼之後，即為 8 位 16 進位金額
+                    // 我們直接從找到的日期位置往後推算
+                    const dateIndex = qrCodeMessage.indexOf(dateStr);
+                    // 日期長度 7 + 隨機碼 4 = 11。所以從 dateIndex + 11 開始切 8 碼
+                    const hexAmount = qrCodeMessage.substring(dateIndex + 11, dateIndex + 19);
+                    const amount = parseInt(hexAmount, 16);
+
+                    // 安全防呆驗證
+                    if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) {
+                        throw new Error("計算出的日期或金額不合法");
+                    }
+
+                    // 成功解析，自動帶入表單
+                    document.getElementById('dateInput').value = `${year}-${month}-${day}`;
+                    document.getElementById('amountInput').value = amount;
+                    document.getElementById('itemInput').value = "電子發票消費";
+                    
+                    alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n自動帶入金額: $${amount} 元`);
+                    
+                    // 關閉全螢幕相機視窗並隱藏
+                    html5QrcodeScanner.clear().then(() => {
+                        readerDiv.style.display = 'none';
+                    }).catch(() => {
+                        readerDiv.style.display = 'none';
+                    });
+
+                } catch (err) {
+                    alert("發票條碼解析失敗！請確保對準的是左側那顆「帶有發票號碼」的 QR Code 喔！");
                 }
-
-                // 成功解析，自動帶入表單欄位
-                document.getElementById('dateInput').value = `${year}-${month}-${day}`;
-                document.getElementById('amountInput').value = amount;
-                document.getElementById('itemInput').value = finalItemName;
-                
-                alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n消費品名: ${finalItemName}\n自動帶入金額: $${amount} 元`);
-                
-                // 關閉全螢幕相機視窗並隱藏
-                html5QrcodeScanner.clear().then(() => {
-                    readerDiv.style.display = 'none';
-                }).catch(() => {
-                    readerDiv.style.display = 'none';
-                });
-
-            } catch (err) {
-                // 進入此區塊代表這不是合格的左側發票 QR Code
-                console.log("解析發票字串時過濾掉的無效訊號:", err.message);
+            } else {
+                alert("這似乎是右側明細，請改掃發票左邊那顆 QR Code 喔！");
             }
         },
         (errorMessage) => {}
@@ -242,6 +226,7 @@ function renderCollapsedList(snapshot, isPersonal) {
     sortedDates.forEach((date) => {
         let group = groupedByDate[date];
         
+        // 🔒 根據全域陣列判斷該日期目前應該是顯示還是隱藏（預設 expandedDates 是空的，所以一律是 none 隱藏）
         const isExpanded = expandedDates.includes(date);
         const displayStyle = isExpanded ? 'block' : 'none';
         const arrowText = isExpanded ? '▲ 收折' : '▼ 展開';
