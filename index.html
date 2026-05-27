@@ -21,7 +21,7 @@
             
             <div class="tabs">
                 <button id="tabPersonal" class="tab-btn active">🔒 個人私帳</button>
-                <button id="tabGroup" class="tab-btn">👥 群組分帳</button>
+                <button id="tabGroup" class="tab-btn">👥 多人群組分帳</button>
             </div>
 
             <div id="groupCodeArea" class="card" style="display: none; background: #f9f9fc; border: 1px dashed #5856d6;">
@@ -73,10 +73,12 @@
                 </div>
             </div>
 
-            <h3>📜 歷史明細 (點擊日期可收折)</h3>
-            <div class="delete-toolbar">
-                <button id="deleteSelectedBtn" class="btn-danger btn-toolbar-del">🗑️ 刪除選中項目</button>
-                <button id="deleteAllBtn" class="btn-danger btn-toolbar-del" style="background:#8e8e93;">⚠️ 全部清空</button>
+            <div class="history-title-area" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+                <h3>📜 歷史消費明細 (點擊日期可收折)</h3>
+                <div class="history-actions">
+                    <button id="deleteSelectedBtn" style="background: none; border: 1px solid #ff3b30; color: #ff3b30; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">🗑️ 刪除選中</button>
+                    <button id="deleteAllBtn" style="background: #ff3b30; border: none; color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 5px;">💥 清空全部</button>
+                </div>
             </div>
 
             <div id="historyCollapseContainer">
@@ -85,7 +87,7 @@
 
         </div>
     </div>
-    
+
     <script type="module" src="app.js"></script>
 </body>
 </html>
