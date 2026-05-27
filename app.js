@@ -79,17 +79,15 @@ function switchMode(mode) {
     }
 }
 
-// 📷 還原「全螢幕彈窗帶有關閉按鈕」的官方 Scanner 模式，並升級智慧 Regex 辨識
+// 📷 智慧發票 QR Code 掃描解析（徹底加入防呆，杜絕晃動卡死錯誤）
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     readerDiv.style.display = 'block';
 
-    // 如果之前有殘留的 Scanner，先清空它
     if (html5QrcodeScanner) {
         html5QrcodeScanner.clear().catch(() => {});
     }
 
-    // 使用官方標準介面：會自動在上方產生關閉按鈕，並提供全螢幕對焦框
     html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
         fps: 15, 
         qrbox: (viewfinderWidth, viewfinderHeight) => {
@@ -101,52 +99,145 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
 
     html5QrcodeScanner.render(
         (qrCodeMessage) => {
-            if (qrCodeMessage.length >= 30) {
-                try {
-                    // 🎯 升級：使用智慧 Regex 搜尋字串中「連續7位數字」作為日期特徵 (3碼民國年 + 2碼月 + 2碼日)
-                    // 例如從 BP259660641150526... 中精準定位出 "1150526"
-                    const dateMatch = qrCodeMessage.match(/\d{7}/);
-                    if (!dateMatch) {
-                        throw new Error("找不到標準發票日期特徵");
-                    }
+            // 🚨 強大安全鎖：如果長度不夠、或者不是發票格式(沒包含冒號)，直接視為無效晃動雜訊，跳過不處理！
+            if (!qrCodeMessage || qrCodeMessage.length < 30 || !qrCodeMessage.includes(':')) {
+                return; 
+            }
 
-                    const dateStr = dateMatch[0];
-                    const twYear = parseInt(dateStr.substring(0, 3), 10);
-                    const year = twYear + 1911;
-                    const month = dateStr.substring(3, 5);
-                    const day = dateStr.substring(5, 7);
-
-                    // 定位金額：緊接在 7 位日期後面的 8 位隨機碼之後，即為 8 位 16 進位金額
-                    // 我們直接從找到的日期位置往後推算
-                    const dateIndex = qrCodeMessage.indexOf(dateStr);
-                    // 日期長度 7 + 隨機碼 4 = 11。所以從 dateIndex + 11 開始切 8 碼
-                    const hexAmount = qrCodeMessage.substring(dateIndex + 11, dateIndex + 19);
-                    const amount = parseInt(hexAmount, 16);
-
-                    // 安全防呆驗證
-                    if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) {
-                        throw new Error("計算出的日期或金額不合法");
-                    }
-
-                    // 成功解析，自動帶入表單
-                    document.getElementById('dateInput').value = `${year}-${month}-${day}`;
-                    document.getElementById('amountInput').value = amount;
-                    document.getElementById('itemInput').value = "電子發票消費";
-                    
-                    alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n自動帶入金額: $${amount} 元`);
-                    
-                    // 關閉全螢幕相機視窗並隱藏
-                    html5QrcodeScanner.clear().then(() => {
-                        readerDiv.style.display = 'none';
-                    }).catch(() => {
-                        readerDiv.style.display = 'none';
-                    });
-
-                } catch (err) {
-                    alert("發票條碼解析失敗！請確保對準的是左側那顆「帶有發票號碼」的 QR Code 喔！");
+            try {
+                // 1. 使用智慧 Regex 搜尋字串中「連續7位數字」作為日期特徵
+                const dateMatch = qrCodeMessage.match(/\d{7}/);
+                if (!dateMatch) {
+                    throw new Error("找不到標準發票日期特徵");
                 }
-            } else {
-                alert("這似乎是右側明細，請改掃發票左邊那顆 QR Code 喔！");
+
+                const dateStr = dateMatch[0];
+                const twYear = parseInt(dateStr.substring(0, 3), 10);
+                const year = twYear + 1911;
+                const month = dateStr.substring(3, 5);
+                const day = dateStr.substring(5, 7);
+
+                // 2. 定位金額：從找到的日期位置往後推算 11 碼，切出 8 碼 16 進位金額
+                const dateIndex = qrCodeMessage.indexOf(dateStr);
+                if (dateIndex === -1 || (dateIndex + 19) > qrCodeMessage.length) {
+                    throw new Error("字串長度不足以切出金額位置");
+                }
+                
+// ... 略過前面代碼 ...
+        (qrCodeMessage) => {
+            // 1. 基礎過濾
+            if (!qrCodeMessage || qrCodeMessage.length < 30) return;
+
+            try {
+                // 2. 尋找日期 (找 7 位數字，例如 1130520)
+                const dateMatch = qrCodeMessage.match(/\d{7}/);
+                if (!dateMatch) throw new Error("找不到日期");
+
+                const dateStr = dateMatch[0];
+                const twYear = parseInt(dateStr.substring(0, 3), 10);
+                const year = twYear + 1911;
+                const month = dateStr.substring(3, 5);
+                const day = dateStr.substring(5, 7);
+
+                // 3. 【關鍵修改】使用正則尋找金額
+                // 傳統發票 QR Code 金額通常在日期後方一段距離，且為 8 碼 16 進位
+                // 我們改用尋找日期後方「符合 16 進位特徵的 8 碼字串」
+                // 或是尋找包含冒號後的特定區塊
+
+                let amount = 0;
+                // 嘗試尋找日期後方緊接的 8 碼 16 進位字串
+                const amountRegex = new RegExp(dateStr + "(\\d{4,8})", "i");
+                // 備案：如果無法直接定位，我們掃描整個字串中符合 16 進位特徵的區塊
+                const hexPattern = /[0-9A-F]{8,}/i;
+                const hexMatch = qrCodeMessage.match(hexPattern);
+
+                if (hexMatch) {
+                    // 這裡我們取日期後方最接近的一個 16 進位區塊
+                    // 為了安全，我們先嘗試找日期後面那個 block
+                    const afterDateStr = qrCodeMessage.substring(qrCodeMessage.indexOf(dateStr) + 7);
+                    const nextHexMatch = after_after_date_match_regex_logic_pattern_after_date_str_substring_indexOf_dateStr_plus_7_nextHexMatch_afterDateStr_match_brackets_0_9_A_F_8_i_amount = afterDateStr.match(/[0-9A-F]{8}/i);
+
+                    if (nextHexMatch) {
+                        amount = parseInt(nextHexMatch[0], 16);
+                    } else {
+                        // 如果找不到，退而求其次使用原有的邏輯但加上 try-catch
+                        const fallbackHex = qrCodeMessage.substring(qrCodeMessage.indexOf(dateStr) + 11, qrCodeMessage.indexOf(dateStr) + 19);
+                        amount = parseInt(fallbackHex, 16);
+                    }
+                }
+
+                if (isNaN(amount)  || amount <= 0) throw new Error("金額解析失敗");
+
+                // 4. 品名解析 (保持你原本的邏輯，但增加防呆)
+                let finalItemName = "電子發票消費";
+                const parts = qrCodeMessage.split(':');
+                if (parts.length > 2) {
+                    for (let i = 2; i < parts.length; i++) {
+                        let p = parts[i].trim();
+                        if (p && !isNaN(p) === false && !p.includes('***')) {
+                            finalItemName = `發票：${p}`;
+                            break;
+                        }
+                    }
+                }
+
+                // 5. 填入表單
+                document.getElementById('dateInput').value = `${year}-${month}-${day}`;
+                document.getElementById('amountInput').value = amount;
+                document.getElementById('itemInput').value = finalItemName;
+
+                alert(`🎉 掃描成功！\n金額: $${amount} 元`);
+
+                html5QrcodeScanner.clear().then(() => {
+                    readerDiv.style = 'none';
+                }).catch(() => {
+                    readerDiv.style = 'none';
+                });
+
+            } catch (err) {
+                console.log("掃描解析失敗:", err.message);
+            }
+        },
+// ... 略過後面代碼 ...
+                const amount = parseInt(hexAmount, 16);
+
+                // 安全防呆驗證
+                if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) {
+                    throw new Error("計算出的日期或金額不合法");
+                }
+
+                // 3. 動態解析品名邏輯（防卡死加固版）：
+                let finalItemName = "電子發票消費"; 
+                const parts = qrCodeMessage.split(':');
+                
+                if (parts && parts.length > 2) {
+                    for (let i = 2; i < parts.length; i++) {
+                        let p = parts[i].trim();
+                        // 排除純數字、空值、以及星號遮蔽區段，抓出第一個中文字串
+                        if (p && isNaN(p) && !p.includes('***')) {
+                            finalItemName = `發票：${p}`;
+                            break;
+                        }
+                    }
+                }
+
+                // 成功解析，自動帶入表單欄位
+                document.getElementById('dateInput').value = `${year}-${month}-${day}`;
+                document.getElementById('amountInput').value = amount;
+                document.getElementById('itemInput').value = finalItemName;
+                
+                alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n消費品名: ${finalItemName}\n自動帶入金額: $${amount} 元`);
+                
+                // 關閉全螢幕相機視窗並隱藏
+                html5QrcodeScanner.clear().then(() => {
+                    readerDiv.style.display = 'none';
+                }).catch(() => {
+                    readerDiv.style.display = 'none';
+                });
+
+            } catch (err) {
+                // 進入此區塊代表這不是合格的左側發票 QR Code
+                console.log("解析發票字串時過濾掉的無效訊號:", err.message);
             }
         },
         (errorMessage) => {}
@@ -226,7 +317,6 @@ function renderCollapsedList(snapshot, isPersonal) {
     sortedDates.forEach((date) => {
         let group = groupedByDate[date];
         
-        // 🔒 根據全域陣列判斷該日期目前應該是顯示還是隱藏（預設 expandedDates 是空的，所以一律是 none 隱藏）
         const isExpanded = expandedDates.includes(date);
         const displayStyle = isExpanded ? 'block' : 'none';
         const arrowText = isExpanded ? '▲ 收折' : '▼ 展開';
