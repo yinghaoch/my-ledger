@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getAuth, signInWithRedirect, GoogleAuthProvider, signOut, onAuthStateChanged, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, signInWithRedirect, GoogleAuthProvider, signOut, onAuthStateChanged, getRedirectResult, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBMYdklxkNrpAiBCQsk6qvRZZ4A2fOcRVw",
@@ -16,7 +16,7 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
-// 強制每次點擊都跳出帳戶選擇器，避免快取錯誤的帳號
+// 強制每一次登入都要彈出帳戶選擇，避免憑證被亂塞
 provider.setCustomParameters({ prompt: 'select_account' });
 
 let currentUserUid = null;
@@ -30,53 +30,83 @@ let expandedDates = [];
 // 初始化填入今日日期
 document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
 
-// 🔥【核心修復 1】：主動捕捉從 Google 認證跳轉回來的結果
-getRedirectResult(auth)
-    .then((result) => {
-        if (result && result.user) {
-            console.log("跳轉登入成功，使用者：", result.user.displayName);
-        }
-    })
-    .catch((error) => {
-        console.error("跳轉認證處理解析失敗：", error);
-        alert("登入程序發生錯誤，請重試：" + error.message);
-    });
+// 核心解鎖畫面的函式
+function unlockApp(user) {
+    currentUserUid = user.uid;
+    currentUserName = user.displayName || "使用者";
+    document.getElementById('welcomeMsg').innerText = `👋 嗨，${currentUserName}！已透過 Google 連線雲端。`;
+    document.getElementById('loginBtn').style.display = "none";
+    document.getElementById('logoutBtn').style.display = "block";
+    document.getElementById('mainApp').style.opacity = "1";
+    document.getElementById('mainApp').style.pointerEvents = "auto";
+    switchMode(currentMode);
+}
 
-// 登入狀態監聽
-onAuthStateChanged(auth, (user) => {
-    if (user) {
-        currentUserUid = user.uid;
-        currentUserName = user.displayName || "使用者";
-        document.getElementById('welcomeMsg').innerText = `👋 嗨，${currentUserName}！已透過 Google 連線雲端。`;
-        document.getElementById('loginBtn').style.display = "none";
-        document.getElementById('logoutBtn').style.display = "block";
-        document.getElementById('mainApp').style.opacity = "1";
-        document.getElementById('mainApp').style.pointerEvents = "auto";
-        switchMode(currentMode);
-    } else {
-        currentUserUid = null;
-        currentUserName = "";
-        document.getElementById('welcomeMsg').innerText = "請先登入以同步您的雲端帳本";
-        document.getElementById('loginBtn').style.display = "block";
-        document.getElementById('logoutBtn').style.display = "none";
-        document.getElementById('mainApp').style.opacity = "0.3";
-        document.getElementById('mainApp').style.pointerEvents = "none";
-        if (unsubscribe) unsubscribe();
+// 核心鎖定畫面的函式
+function lockApp() {
+    currentUserUid = null;
+    currentUserName = "";
+    document.getElementById('welcomeMsg').innerText = "請先登入以同步您的雲端帳本";
+    document.getElementById('loginBtn').style.display = "block";
+    document.getElementById('logoutBtn').style.display = "none";
+    document.getElementById('mainApp').style.opacity = "0.3";
+    document.getElementById('mainApp').style.pointerEvents = "none";
+    if (unsubscribe) unsubscribe();
+}
+
+// 🚀【終極整合流水線】：確保持久化、跳轉結果、即時監聽三者不打架
+async function runAuthPipeline() {
+    try {
+        // 1. 先定義本機儲存機制，確保狀態不走失
+        await setPersistence(auth, browserLocalPersistence);
+        
+        // 2. 主動去把跳轉回來的「使用者憑證」撈回來
+        const result = await getRedirectResult(auth);
+        if (result && result.user) {
+            console.log("流水線成功捕捉跳轉用戶:", result.user.displayName);
+            unlockApp(result.user);
+            return; // 成功捕捉就直接解鎖，不重複往下走
+        }
+    } catch (error) {
+        console.error("流水線捕捉跳轉發生錯誤:", error);
+    }
+
+    // 3. 如果沒有跳轉憑證，或者初次打開，交給即時監聽器處理
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            console.log("監聽器發現已登入狀態:", user.displayName);
+            unlockApp(user);
+        } else {
+            console.log("監聽器確認為未登入狀態");
+            lockApp();
+        }
+    });
+}
+
+// 啟動身份驗證流水線
+runAuthPipeline();
+
+// 登入按鈕事件
+document.getElementById('loginBtn').addEventListener('click', async () => {
+    try {
+        // 點擊登入時再次確保 Persistence 設定成功，隨即跳轉
+        await setPersistence(auth, browserLocalPersistence);
+        signInWithRedirect(auth, provider);
+    } catch (e) {
+        signInWithRedirect(auth, provider);
     }
 });
 
-document.getElementById('loginBtn').addEventListener('click', () => signInWithRedirect(auth, provider));
+// 登出按鈕事件
 document.getElementById('logoutBtn').addEventListener('click', () => {
     signOut(auth).then(() => {
-        window.location.reload(); // 登出後強制重新整理頁面，確保狀態乾淨
+        window.location.reload();
     });
 });
 
-// 頁籤切換
+// === 後續的頁籤、發票掃描及資料庫儲存運算邏輯（維持原樣不變） ===
 document.getElementById('tabPersonal').addEventListener('click', () => { expandedDates = []; switchMode('personal'); });
 document.getElementById('tabGroup').addEventListener('click', () => { expandedDates = []; switchMode('group'); });
-
-// 當群組代號或密碼輸入時，觸發監聽
 document.getElementById('groupCode').addEventListener('input', () => { if (currentMode === 'group') triggerGroupSync(); });
 document.getElementById('groupPassword').addEventListener('input', () => { if (currentMode === 'group') triggerGroupSync(); });
 
@@ -105,7 +135,6 @@ function triggerGroupSync() {
     if (unsubscribe) unsubscribe();
     const targetGroup = document.getElementById('groupCode').value.trim();
     const targetPassword = document.getElementById('groupPassword').value.trim();
-    
     if (!targetGroup || !targetPassword) {
         document.getElementById('reportCard').innerHTML = "<p style='color:#8e8e93;'>🔑 請輸入「群組代號」與「房間密碼」以同步帳目內容。</p>";
         document.getElementById('historyCollapseContainer').innerHTML = "<p style='text-align:center;color:#8e8e93;'>等待輸入密碼中...</p>";
@@ -114,19 +143,12 @@ function triggerGroupSync() {
     startListeningGroup(targetGroup, targetPassword);
 }
 
-// 📷 智慧發票 QR Code 掃描（🔥【核心修復 2】：重新優化台灣電子發票格式相容性）
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
-    
-    if (html5QrcodeScanner && readerDiv.style.display === 'block') {
-        cleanupScanner();
-        return;
-    }
-
+    if (html5QrcodeScanner && readerDiv.style.display === 'block') { cleanupScanner(); return; }
     readerDiv.style.display = 'block';
     document.getElementById('scanInvoiceBtn').innerText = "🛑 關閉發票掃描器";
     document.getElementById('scanInvoiceBtn').style.background = "#ff3b30";
-
     try {
         html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
             fps: 10, 
@@ -137,166 +159,82 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
             videoConstraints: { facingMode: "environment" },
             rememberLastUsedCamera: true
         }, false);
-
         html5QrcodeScanner.render(
             (qrCodeMessage) => {
                 if (!qrCodeMessage || qrCodeMessage.length < 24) return; 
-
-                // 檢查是否誤掃到右側明細（通常以 ** 開頭，或者包含很多冒號但長度不對）
                 if (qrCodeMessage.startsWith("**") || (qrCodeMessage.includes(':') && !/^[A-Z]{2}\d{8}/.test(qrCodeMessage))) {
-                    alert("⚠️ 這確認是右側明細，請對準「左側」帶有發票號碼的 QR Code！");
-                    return;
+                    alert("⚠️ 這確認是右側明細，請對準「左側」帶有發票號碼的 QR Code！"); return;
                 }
-
                 try {
-                    // 標準左側格式：2碼英文 + 8碼數字 + 7碼民國年月日與資訊
                     const match = qrCodeMessage.match(/^([A-Z]{2})(\d{8})(\d{7})/);
-                    if (!match) {
-                        alert("⚠️ 讀取到的條碼格式不符，請對準發票左側的 QR Code 喔！");
-                        return; 
-                    }
-
-                    const invNum = match[1] + match[2]; 
-                    const dateStr = match[3];           
-                    
-                    const twYear = parseInt(dateStr.substring(0, 3), 10);
-                    const year = twYear + 1911;
-                    const month = dateStr.substring(3, 5);
-                    const day = dateStr.substring(5, 7);
-
-                    // 金額位於第 21 字元開始的 8 位十六進位碼 (Hex)
-                    const amountHexIndex = 2 + 8 + 7 + 4; 
-                    if (qrCodeMessage.length < (amountHexIndex + 8)) return;
-                    
+                    if (!match) { alert("⚠️ 讀取到的條碼格式不符，請對準發票左側的 QR Code 喔！"); return; }
+                    const invNum = match[1] + match[2]; const dateStr = match[3];           
+                    const twYear = parseInt(dateStr.substring(0, 3), 10); const year = twYear + 1911;
+                    const month = dateStr.substring(3, 5); const day = dateStr.substring(5, 7);
+                    const amountHexIndex = 2 + 8 + 7 + 4; if (qrCodeMessage.length < (amountHexIndex + 8)) return;
                     const hexAmount = qrCodeMessage.substring(amountHexIndex, amountHexIndex + 8);
                     const amount = parseInt(hexAmount, 16);
-
                     if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) return;
-
                     let finalItemName = `發票消費 (${invNum})`;
-                    // 如果後面有帶明細項目資訊，嘗試切開抓出第一個品名
                     if (qrCodeMessage.includes(':')) {
                         const parts = qrCodeMessage.split(':');
                         if (parts && parts.length > 2) {
                             for (let i = 2; i < parts.length; i++) {
                                 let p = parts[i].trim();
-                                if (p && isNaN(p) && !p.includes('***') && p.length > 1) {
-                                    finalItemName = `發票：${p}`;
-                                    break;
-                                }
+                                if (p && isNaN(p) && !p.includes('***') && p.length > 1) { finalItemName = `發票：${p}`; break; }
                             }
                         }
                     }
-
                     document.getElementById('dateInput').value = `${year}-${month}-${day}`;
                     document.getElementById('amountInput').value = amount;
                     document.getElementById('itemInput').value = finalItemName;
-                    
                     alert(`🎉 發票掃描成功！\n發票號碼: ${invNum}\n自動帶入金額: $${amount} 元`);
                     cleanupScanner();
-                } catch (err) { 
-                    console.error("發票解析錯誤:", err); 
-                }
-            },
-            (errorMessage) => {}
+                } catch (err) { console.error("發票解析錯誤:", err); }
+            }, (errorMessage) => {}
         );
-    } catch (err) {
-        console.error("相機啟動錯誤:", err);
-    }
+    } catch (err) { console.error("相機啟動錯誤:", err); }
 });
 
 function cleanupScanner() {
     const readerDiv = document.getElementById('reader');
     document.getElementById('scanInvoiceBtn').innerText = "📷 掃描發票 QR Code 記帳";
     document.getElementById('scanInvoiceBtn').style.background = "#af52de";
-    if (html5QrcodeScanner) {
-        html5QrcodeScanner.clear()
-            .then(() => { readerDiv.style.display = 'none'; })
-            .catch(() => { readerDiv.style.display = 'none'; });
-    } else {
-        readerDiv.style.display = 'none';
-    }
+    if (html5QrcodeScanner) { html5QrcodeScanner.clear().then(() => { readerDiv.style.display = 'none'; }).catch(() => { readerDiv.style.display = 'none'; }); } 
+    else { readerDiv.style.display = 'none'; }
 }
 
-// 💾 儲存按鈕
 document.getElementById('saveBtn').addEventListener('click', async () => {
     const date = document.getElementById('dateInput').value;
     const item = document.getElementById('itemInput').value.trim();
     const amount = parseFloat(document.getElementById('amountInput').value);
     const groupCode = document.getElementById('groupCode').value.trim();
     const groupPassword = document.getElementById('groupPassword').value.trim();
-
     if (!item || !amount || !date) { alert('請填寫完整的日期、品名與金額！'); return; }
     if (currentMode === 'group' && (!groupCode || !groupPassword)) { alert('群組模式下，必須填寫群組代號與房間密碼！'); return; }
-
-    document.getElementById('saveBtn').innerText = "上傳中...";
-    document.getElementById('saveBtn').disabled = true;
-
-    let newRecord = {
-        mode: currentMode,
-        date: date,
-        item: item,
-        amount: amount,
-        uid: currentUserUid,        
-        payerName: currentUserName,  
-        timestamp: new Date().getTime()
-    };
-
-    if (currentMode === 'group') {
-        newRecord.groupCode = groupCode;
-        newRecord.groupPassword = groupPassword; 
-        let payer = document.getElementById('payerInput').value.trim();
-        newRecord.payer = payer ? payer : currentUserName;
-    }
-
-    try {
-        await addDoc(collection(db, "all_ledgers"), newRecord);
-        document.getElementById('itemInput').value = '';
-        document.getElementById('amountInput').value = '';
-    } catch (e) {
-        alert("儲存失敗！");
-    } finally {
-        document.getElementById('saveBtn').innerText = "儲存至雲端";
-        document.getElementById('saveBtn').disabled = false;
-    }
+    document.getElementById('saveBtn').innerText = "上傳中..."; document.getElementById('saveBtn').disabled = true;
+    let newRecord = { mode: currentMode, date: date, item: item, amount: amount, uid: currentUserUid, payerName: currentUserName, timestamp: new Date().getTime() };
+    if (currentMode === 'group') { newRecord.groupCode = groupCode; newRecord.groupPassword = groupPassword; let payer = document.getElementById('payerInput').value.trim(); newRecord.payer = payer ? payer : currentUserName; }
+    try { await addDoc(collection(db, "all_ledgers"), newRecord); document.getElementById('itemInput').value = ''; document.getElementById('amountInput').value = ''; } 
+    catch (e) { alert("儲存失敗！"); } 
+    finally { document.getElementById('saveBtn').innerText = "儲存至雲端"; document.getElementById('saveBtn').disabled = false; }
 });
 
-// 🔄 歷史紀錄與收折運算核心
 function renderCollapsedList(snapshot, isPersonal) {
-    let totalSpent = 0;
-    let records = [];
-    let membersSet = new Set();
-    
-    snapshot.forEach((doc) => {
-        let data = doc.data();
-        data.id = doc.id;
-        records.push(data);
-    });
-
-    records.sort((a, b) => b.timestamp - a.timestamp);
-    currentLoadedRecords = records;
-
+    let totalSpent = 0; let records = []; let membersSet = new Set();
+    snapshot.forEach((doc) => { let data = doc.data(); data.id = doc.id; records.push(data); });
+    records.sort((a, b) => b.timestamp - a.timestamp); currentLoadedRecords = records;
     let groupedByDate = {};
     records.forEach(r => {
-        totalSpent += r.amount;
-        if (!isPersonal) membersSet.add(r.payer || r.payerName);
-
-        if (!groupedByDate[r.date]) {
-            groupedByDate[r.date] = { dayTotal: 0, items: [] };
-        }
-        groupedByDate[r.date].dayTotal += r.amount;
-        groupedByDate[r.date].items.push(r);
+        totalSpent += r.amount; if (!isPersonal) membersSet.add(r.payer || r.payerName);
+        if (!groupedByDate[r.date]) { groupedByDate[r.date] = { dayTotal: 0, items: [] }; }
+        groupedByDate[r.date].dayTotal += r.amount; groupedByDate[r.date].items.push(r);
     });
-
     let sortedDates = Object.keys(groupedByDate).sort((a, b) => new Date(b) - new Date(a));
-
     let mainHTML = '';
     sortedDates.forEach((date) => {
-        let group = groupedByDate[date];
-        const isExpanded = expandedDates.includes(date);
-        const displayStyle = isExpanded ? 'block' : 'none';
-        const arrowText = isExpanded ? '▲ 收折' : '▼ 展開';
-        
+        let group = groupedByDate[date]; const isExpanded = expandedDates.includes(date);
+        const displayStyle = isExpanded ? 'block' : 'none'; const arrowText = isExpanded ? '▲ 收折' : '▼ 展開';
         mainHTML += `
             <div class="date-group" id="group-${date}" style="margin-top: 10px; border: 1px solid #e5e5ea; border-radius: 8px; overflow: hidden;">
                 <div class="date-header" onclick="toggleCollapseVisibility('${date}')" style="background: #f2f2f7; padding: 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
@@ -304,9 +242,7 @@ function renderCollapsedList(snapshot, isPersonal) {
                         <input type="checkbox" class="date-group-chk" data-date="${date}" onclick="event.stopPropagation(); toggleSelectDateGroup('${date}', this.checked)">
                         <span style="font-weight: bold; margin-left: 5px;">📅 ${date}</span>
                     </div>
-                    <div class="date-total-right">
-                        <span style="font-size: 13px; color: #3a3a3c;">當日總計: <b>$${group.dayTotal.toFixed(0)}</b> 元 <span id="arrow-${date}" style="color: #007aff; margin-left: 5px;">${arrowText}</span></span>
-                    </div>
+                    <div class="date-total-right"><span>當日總計: <b>$${group.dayTotal.toFixed(0)}</b> 元 <span id="arrow-${date}" style="color: #007aff; margin-left: 5px;">${arrowText}</span></span></div>
                 </div>
                 <ul class="item-list" id="list-${date}" style="display: ${displayStyle}; list-style: none; padding: 0; margin: 0; background: #fff;">
                     ${group.items.map(item => `
@@ -324,22 +260,61 @@ function renderCollapsedList(snapshot, isPersonal) {
                         </li>
                     `).join('')}
                 </ul>
-            </div>
-        `;
+            </div>`;
     });
-
     document.getElementById('historyCollapseContainer').innerHTML = mainHTML || '<p style="text-align:center;color:#8e8e93;margin-top:20px;">尚無任何記帳紀錄</p>';
     return { totalSpent, records, members: Array.from(membersSet) };
 }
 
 window.toggleCollapseVisibility = function(date) {
-    const listEl = document.getElementById(`list-${date}`);
-    const arrowEl = document.getElementById(`arrow-${date}`);
-    if (listEl.style.display === 'none') {
-        listEl.style.display = 'block'; arrowEl.innerText = '▲ 收折';
-        if (!expandedDates.includes(date)) expandedDates.push(date);
-    } else {
-        listEl.style.display = 'none'; arrowEl.innerText = '▼ 展開';
-        expandedDates = expandedDates.filter(d => d !== date);
-    }
+    const listEl = document.getElementById(`list-${date}`); const arrowEl = document.getElementById(`arrow-${date}`);
+    if (listEl.style.display === 'none') { listEl.style.display = 'block'; arrowEl.innerText = '▲ 收折'; if (!expandedDates.includes(date)) expandedDates.push(date); } 
+    else { listEl.style.display = 'none'; arrowEl.innerText = '▼ 展開'; expandedDates = expandedDates.filter(d => d !== date); }
 }
+
+function startListeningPersonal() {
+    const q = query(collection(db, "all_ledgers"), where("mode", "==", "personal"), where("uid", "==", currentUserUid));
+    unsubscribe = onSnapshot(q, (snapshot) => { const { totalSpent } = renderCollapsedList(snapshot, true); document.getElementById('reportCard').innerHTML = `<p style="font-size:16px; font-weight:bold; color:#007aff;">🔒 您的個人累積總消費：$${totalSpent.toFixed(0)} 元</p>`; });
+}
+
+function startListeningGroup(targetGroup, targetPassword) {
+    const q = query(collection(db, "all_ledgers"), where("mode", "==", "group"), where("groupCode", "==", targetGroup), where("groupPassword", "==", targetPassword));
+    unsubscribe = onSnapshot(q, (snapshot) => {
+        const { totalSpent, records, members } = renderCollapsedList(snapshot, false);
+        if (records.length === 0) { document.getElementById('reportCard').innerHTML = "<p>🎉 密碼正確！目前此房間尚無消費紀錄。</p>"; return; }
+        if (members.length <= 1) { document.getElementById('reportCard').innerHTML = `<p><b>🏠 房間：${targetGroup} 總花費：</b>$${totalSpent} 元</p>`; return; }
+        let paidValues = {}; members.forEach(m => paidValues[m] = 0); records.forEach(r => paidValues[r.payer || r.payerName] += r.amount);
+        let avgShare = totalSpent / members.length; let balances = members.map(m => ({ name: m, net: paidValues[m] - avgShare }));
+        let creditors = balances.filter(b => b.net > 0).sort((a, b) => b.net - a.net); let debtors = balances.filter(b => b.net < 0).sort((a, b) => a.net - b.net);
+        let reportHTML = `<p><b>🏠 房間：${targetGroup} 總花費：</b>$${totalSpent.toFixed(0)} 元 (每人平均 $${avgShare.toFixed(0)} 元)</p><hr style="margin:8px 0; border-color:#b3d7ff;">`;
+        let lines = []; let i = 0, j = 0;
+        while (i < debtors.length && j < creditors.length) {
+            let debtor = debtors[i]; let creditor = creditors[j]; let amountToPay = Math.min(Math.abs(debtor.net), creditor.net);
+            if (amountToPay > 0.1) lines.push(`<div class="settle-line" style="margin-top:4px;">❌ <b>${debtor.name}</b> 應給 <b>${creditor.name}</b>：<b style="color:#ff3b30;">$${amountToPay.toFixed(0)}</b> 元</div>`);
+            debtor.net += amountToPay; creditor.net -= amountToPay; if (Math.abs(debtor.net) < 0.1) i++; if (creditor.net < 0.1) j++;
+        }
+        document.getElementById('reportCard').innerHTML = reportHTML + (lines.length ? lines.join('') : "<p>帳目皆清！</p>");
+    });
+}
+
+window.toggleSelectDateGroup = function(date, isChecked) { document.querySelectorAll(`.item-single-chk[data-date="${date}"]`).forEach(chk => chk.checked = isChecked); }
+window.checkSingleStatus = function(date) {
+    const totalCount = document.querySelectorAll(`.item-single-chk[data-date="${date}"]`).length;
+    const checkedCount = document.querySelectorAll(`.item-single-chk[data-date="${date}"]:checked`).length;
+    const groupChk = document.querySelector(`.date-group-chk[data-date="${date}"]`); if (groupChk) groupChk.checked = (totalCount === checkedCount);
+}
+
+document.getElementById('deleteSelectedBtn').addEventListener('click', async () => {
+    const checkedBoxes = document.querySelectorAll('.item-single-chk:checked'); if (checkedBoxes.length === 0) { alert('請先勾選你要刪除的記帳項目！'); return; }
+    if (!confirm(`⚠️ 確定要刪除這 ${checkedBoxes.length} 筆消費紀錄嗎？`)) return;
+    for (let chk of checkedBoxes) { try { await deleteDoc(doc(db, "all_ledgers", chk.getAttribute('data-id'))); } catch (err) { console.error("刪除失敗", err); } }
+    alert('🎉 選擇項目已刪除！');
+});
+
+document.getElementById('deleteAllBtn').addEventListener('click', async () => {
+    if (currentLoadedRecords.length === 0) { alert('目前沒有任何可以刪除的紀錄。'); return; }
+    if (!confirm(`🚨 警告！確定要清空當前畫面顯示的全部 ${currentLoadedRecords.length} 筆帳目嗎？`)) return;
+    if (!confirm(`最後確認：此操作不可逆！真的要全部清空嗎？`)) return;
+    for (let record of currentLoadedRecords) { try { await deleteDoc(doc(db, "all_ledgers", record.id)); } catch (err) { console.error("刪除失敗", err); } }
+    alert('💥 所有帳目已徹底清空！');
+});
