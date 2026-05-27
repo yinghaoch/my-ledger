@@ -16,7 +16,7 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
-// 解決跨網域跳轉的關鍵：設定 Custom Parameters
+// 強制每次點擊都跳出帳戶選擇器，避免快取錯誤的帳號
 provider.setCustomParameters({ prompt: 'select_account' });
 
 let currentUserUid = null;
@@ -30,23 +30,24 @@ let expandedDates = [];
 // 初始化填入今日日期
 document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
 
-// === 修正：主動且非阻塞地捕捉手機/電腦 Redirect 跳轉結果 ===
+// 🔥【核心修復 1】：主動捕捉從 Google 認證跳轉回來的結果
 getRedirectResult(auth)
     .then((result) => {
         if (result && result.user) {
-            console.log("跳轉登入成功:", result.user.displayName);
+            console.log("跳轉登入成功，使用者：", result.user.displayName);
         }
     })
     .catch((error) => {
-        console.error("跳轉認證發生錯誤:", error);
+        console.error("跳轉認證處理解析失敗：", error);
+        alert("登入程序發生錯誤，請重試：" + error.message);
     });
 
-// === 核心監聽：只要這個沒被阻塞，電腦與手機就絕對能正常顯示登入狀態 ===
+// 登入狀態監聽
 onAuthStateChanged(auth, (user) => {
     if (user) {
         currentUserUid = user.uid;
         currentUserName = user.displayName || "使用者";
-        document.getElementById('welcomeMsg').innerText = `👋 嗨，${currentUserName}！已連線雲端。`;
+        document.getElementById('welcomeMsg').innerText = `👋 嗨，${currentUserName}！已透過 Google 連線雲端。`;
         document.getElementById('loginBtn').style.display = "none";
         document.getElementById('logoutBtn').style.display = "block";
         document.getElementById('mainApp').style.opacity = "1";
@@ -64,14 +65,10 @@ onAuthStateChanged(auth, (user) => {
     }
 });
 
-// 點擊登入：回歸最純粹的官方跳轉，不再預先執行可能死鎖的 Persistence
-document.getElementById('loginBtn').addEventListener('click', () => {
-    signInWithRedirect(auth, provider);
-});
-
+document.getElementById('loginBtn').addEventListener('click', () => signInWithRedirect(auth, provider));
 document.getElementById('logoutBtn').addEventListener('click', () => {
     signOut(auth).then(() => {
-        window.location.reload(); // 登出後強制刷新，乾淨清空暫存
+        window.location.reload(); // 登出後強制重新整理頁面，確保狀態乾淨
     });
 });
 
@@ -79,6 +76,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
 document.getElementById('tabPersonal').addEventListener('click', () => { expandedDates = []; switchMode('personal'); });
 document.getElementById('tabGroup').addEventListener('click', () => { expandedDates = []; switchMode('group'); });
 
+// 當群組代號或密碼輸入時，觸發監聽
 document.getElementById('groupCode').addEventListener('input', () => { if (currentMode === 'group') triggerGroupSync(); });
 document.getElementById('groupPassword').addEventListener('input', () => { if (currentMode === 'group') triggerGroupSync(); });
 
@@ -116,7 +114,7 @@ function triggerGroupSync() {
     startListeningGroup(targetGroup, targetPassword);
 }
 
-// 📷 智慧發票 QR Code 掃描（相容台灣發票格式）
+// 📷 智慧發票 QR Code 掃描（🔥【核心修復 2】：重新優化台灣電子發票格式相容性）
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     
@@ -127,6 +125,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
 
     readerDiv.style.display = 'block';
     document.getElementById('scanInvoiceBtn').innerText = "🛑 關閉發票掃描器";
+    document.getElementById('scanInvoiceBtn').style.background = "#ff3b30";
 
     try {
         html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
@@ -143,14 +142,19 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
             (qrCodeMessage) => {
                 if (!qrCodeMessage || qrCodeMessage.length < 24) return; 
 
+                // 檢查是否誤掃到右側明細（通常以 ** 開頭，或者包含很多冒號但長度不對）
                 if (qrCodeMessage.startsWith("**") || (qrCodeMessage.includes(':') && !/^[A-Z]{2}\d{8}/.test(qrCodeMessage))) {
                     alert("⚠️ 這確認是右側明細，請對準「左側」帶有發票號碼的 QR Code！");
                     return;
                 }
 
                 try {
+                    // 標準左側格式：2碼英文 + 8碼數字 + 7碼民國年月日與資訊
                     const match = qrCodeMessage.match(/^([A-Z]{2})(\d{8})(\d{7})/);
-                    if (!match) return; 
+                    if (!match) {
+                        alert("⚠️ 讀取到的條碼格式不符，請對準發票左側的 QR Code 喔！");
+                        return; 
+                    }
 
                     const invNum = match[1] + match[2]; 
                     const dateStr = match[3];           
@@ -160,6 +164,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                     const month = dateStr.substring(3, 5);
                     const day = dateStr.substring(5, 7);
 
+                    // 金額位於第 21 字元開始的 8 位十六進位碼 (Hex)
                     const amountHexIndex = 2 + 8 + 7 + 4; 
                     if (qrCodeMessage.length < (amountHexIndex + 8)) return;
                     
@@ -169,6 +174,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                     if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) return;
 
                     let finalItemName = `發票消費 (${invNum})`;
+                    // 如果後面有帶明細項目資訊，嘗試切開抓出第一個品名
                     if (qrCodeMessage.includes(':')) {
                         const parts = qrCodeMessage.split(':');
                         if (parts && parts.length > 2) {
@@ -195,13 +201,14 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
             (errorMessage) => {}
         );
     } catch (err) {
-        console.error("相機啟動失敗:", err);
+        console.error("相機啟動錯誤:", err);
     }
 });
 
 function cleanupScanner() {
     const readerDiv = document.getElementById('reader');
     document.getElementById('scanInvoiceBtn').innerText = "📷 掃描發票 QR Code 記帳";
+    document.getElementById('scanInvoiceBtn').style.background = "#af52de";
     if (html5QrcodeScanner) {
         html5QrcodeScanner.clear()
             .then(() => { readerDiv.style.display = 'none'; })
@@ -291,28 +298,28 @@ function renderCollapsedList(snapshot, isPersonal) {
         const arrowText = isExpanded ? '▲ 收折' : '▼ 展開';
         
         mainHTML += `
-            <div class="date-group" id="group-${date}">
-                <div class="date-header" onclick="toggleCollapseVisibility('${date}')">
+            <div class="date-group" id="group-${date}" style="margin-top: 10px; border: 1px solid #e5e5ea; border-radius: 8px; overflow: hidden;">
+                <div class="date-header" onclick="toggleCollapseVisibility('${date}')" style="background: #f2f2f7; padding: 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
                     <div class="date-title-left">
                         <input type="checkbox" class="date-group-chk" data-date="${date}" onclick="event.stopPropagation(); toggleSelectDateGroup('${date}', this.checked)">
-                        <span>📅 ${date}</span>
+                        <span style="font-weight: bold; margin-left: 5px;">📅 ${date}</span>
                     </div>
                     <div class="date-total-right">
-                        <span>當日總計: <b>$${group.dayTotal.toFixed(0)}</b> 元 <span id="arrow-${date}" style="color: #007aff; margin-left: 5px;">${arrowText}</span></span>
+                        <span style="font-size: 13px; color: #3a3a3c;">當日總計: <b>$${group.dayTotal.toFixed(0)}</b> 元 <span id="arrow-${date}" style="color: #007aff; margin-left: 5px;">${arrowText}</span></span>
                     </div>
                 </div>
-                <ul class="item-list" id="list-${date}" style="display: ${displayStyle};">
+                <ul class="item-list" id="list-${date}" style="display: ${displayStyle}; list-style: none; padding: 0; margin: 0; background: #fff;">
                     ${group.items.map(item => `
-                        <li>
-                            <div class="history-item-content">
-                                <div class="item-left">
-                                    <input type="checkbox" class="item-single-chk" data-id="${item.id}" data-date="${item.date}" onclick="checkSingleStatus('${item.date}')">
+                        <li style="padding: 10px; border-top: 1px solid #e5e5ea;">
+                            <div class="history-item-content" style="display: flex; justify-content: space-between; align-items: center;">
+                                <div class="item-left" style="display: flex; align-items: center;">
+                                    <input type="checkbox" class="item-single-chk" data-id="${item.id}" data-date="${date}" onclick="checkSingleStatus('${date}')">
                                     <div style="margin-left: 10px;">
-                                        <div class="item-name">${item.item}</div>
-                                        <div class="item-info">${isPersonal ? '' : '付款人: ' + (item.payer || item.payerName)}</div>
+                                        <div class="item-name" style="font-weight: 500;">${item.item}</div>
+                                        <div class="item-info" style="font-size: 11px; color: #8e8e93;">${isPersonal ? '' : '付款人: ' + (item.payer || item.payerName)}</div>
                                     </div>
                                 </div>
-                                <div class="item-amount">$${item.amount}</div>
+                                <div class="item-amount" style="font-weight: bold; color: #3a3a3c;">$${item.amount}</div>
                             </div>
                         </li>
                     `).join('')}
@@ -328,7 +335,6 @@ function renderCollapsedList(snapshot, isPersonal) {
 window.toggleCollapseVisibility = function(date) {
     const listEl = document.getElementById(`list-${date}`);
     const arrowEl = document.getElementById(`arrow-${date}`);
-    if (!listEl) return;
     if (listEl.style.display === 'none') {
         listEl.style.display = 'block'; arrowEl.innerText = '▲ 收折';
         if (!expandedDates.includes(date)) expandedDates.push(date);
@@ -337,77 +343,3 @@ window.toggleCollapseVisibility = function(date) {
         expandedDates = expandedDates.filter(d => d !== date);
     }
 }
-
-// 監聽個人帳目
-function startListeningPersonal() {
-    const q = query(collection(db, "all_ledgers"), where("mode", "==", "personal"), where("uid", "==", currentUserUid));
-    unsubscribe = onSnapshot(q, (snapshot) => {
-        const { totalSpent } = renderCollapsedList(snapshot, true);
-        document.getElementById('reportCard').innerHTML = `<p style="font-size:16px; font-weight:bold; color:#007aff;">🔒 您的個人累積總消費：$${totalSpent.toFixed(0)} 元</p>`;
-    });
-}
-
-// 監聽群組公帳
-function startListeningGroup(targetGroup, targetPassword) {
-    const q = query(collection(db, "all_ledgers"), where("mode", "==", "group"), where("groupCode", "==", targetGroup), where("groupPassword", "==", targetPassword));
-    unsubscribe = onSnapshot(q, (snapshot) => {
-        const { totalSpent, records, members } = renderCollapsedList(snapshot, false);
-        if (records.length === 0) { document.getElementById('reportCard').innerHTML = "<p>🎉 密碼正確！目前此房間尚無消費紀錄。</p>"; return; }
-        if (members.length <= 1) { document.getElementById('reportCard').innerHTML = `<p><b>🏠 房間：${targetGroup} 總花費：</b>$${totalSpent} 元</p>`; return; }
-
-        let paidValues = {}; members.forEach(m => paidValues[m] = 0);
-        records.forEach(r => paidValues[r.payer || r.payerName] += r.amount);
-        let avgShare = totalSpent / members.length;
-        let balances = members.map(m => ({ name: m, net: paidValues[m] - avgShare }));
-        let creditors = balances.filter(b => b.net > 0).sort((a, b) => b.net - a.net);
-        let debtors = balances.filter(b => b.net < 0).sort((a, b) => a.net - b.net);
-
-        let reportHTML = `<p><b>🏠 房間：${targetGroup} 總花費：</b>$${totalSpent.toFixed(0)} 元 (每人平均 $${avgShare.toFixed(0)} 元)</p><hr style="margin:8px 0; border-color:#b3d7ff;">`;
-        let lines = []; let i = 0, j = 0;
-        while (i < debtors.length && j < creditors.length) {
-            let debtor = debtors[i]; let creditor = creditors[j];
-            let amountToPay = Math.min(Math.abs(debtor.net), creditor.net);
-            if (amountToPay > 0.1) lines.push(`<div class="settle-line" style="margin-top:4px;">❌ <b>${debtor.name}</b> 應給 <b>${creditor.name}</b>：<b style="color:#ff3b30;">$${amountToPay.toFixed(0)}</b> 元</div>`);
-            debtor.net += amountToPay; creditor.net -= amountToPay;
-            if (Math.abs(debtor.net) < 0.1) i++; if (creditor.net < 0.1) j++;
-        }
-        document.getElementById('reportCard').innerHTML = reportHTML + (lines.length ? lines.join('') : "<p>帳目皆清！</p>");
-    });
-}
-
-// 勾選連動
-window.toggleSelectDateGroup = function(date, isChecked) {
-    document.querySelectorAll(`.item-single-chk[data-date="${date}"]`).forEach(chk => chk.checked = isChecked);
-}
-window.checkSingleStatus = function(date) {
-    const totalCount = document.querySelectorAll(`.item-single-chk[data-date="${date}"]`).length;
-    const checkedCount = document.querySelectorAll(`.item-single-chk[data-date="${date}"]:checked`).length;
-    const groupChk = document.querySelector(`.date-group-chk[data-date="${date}"]`);
-    if (groupChk) groupChk.checked = (totalCount === checkedCount);
-}
-
-// 刪除選中
-document.getElementById('deleteSelectedBtn').addEventListener('click', async () => {
-    const checkedBoxes = document.querySelectorAll('.item-single-chk:checked');
-    if (checkedBoxes.length === 0) { alert('請先勾選你要刪除的記帳項目！'); return; }
-    if (!confirm(`⚠️ 確定要刪除這 ${checkedBoxes.length} 筆消費紀錄嗎？`)) return;
-
-    for (let chk of checkedBoxes) {
-        try { await deleteDoc(doc(db, "all_ledgers", chk.getAttribute('data-id'))); } 
-        catch (err) { console.error("刪除失敗", err); }
-    }
-    alert('🎉 選擇項目已刪除！');
-});
-
-// 清空全部
-document.getElementById('deleteAllBtn').addEventListener('click', async () => {
-    if (currentLoadedRecords.length === 0) { alert('目前沒有任何可以刪除的紀錄。'); return; }
-    if (!confirm(`🚨 警告！確定要清空當前畫面顯示的全部 ${currentLoadedRecords.length} 筆帳目嗎？`)) return;
-    if (!confirm(`最後確認：此操作不可逆！真的要全部清空嗎？`)) return;
-
-    for (let record of currentLoadedRecords) {
-        try { await deleteDoc(doc(db, "all_ledgers", record.id)); } 
-        catch (err) { console.error("刪除失敗", err); }
-    }
-    alert('💥 所有帳目已徹底清空！');
-});
