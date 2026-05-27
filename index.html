@@ -12,20 +12,12 @@
         <h2>💰 全功能雲端記帳本</h2>
         
         <div id="authArea" class="card bg-light text-center">
-            <div id="loginFormArea">
-                <p>請輸入您的使用者名稱以開始記帳</p>
-                <div style="display: flex; gap: 8px; justify-content: center; max-width: 320px; margin: 0 auto;">
-                    <input type="text" id="usernameInput" placeholder="例如：阿明" style="margin-bottom: 0;">
-                    <button id="loginBtn" class="btn-g" style="white-space: nowrap; width: auto;">進入記帳</button>
-                </div>
-            </div>
-            <div id="userInfoArea" style="display: none;">
-                <p id="welcomeMsg">👋 歡迎回來！</p>
-                <button id="logoutBtn" class="btn-danger">切換使用者</button>
-            </div>
+            <p id="welcomeMsg">請先登入以同步您的雲端帳本</p>
+            <button id="loginBtn" class="btn-g">使用 Google 帳號登入</button>
+            <button id="logoutBtn" class="btn-danger" style="display: none;">登出帳號</button>
         </div>
 
-        <div id="mainApp" style="opacity: 0.3; pointer-events: none; transition: 0.3s ripen;">
+        <div id="mainApp" style="opacity: 0.3; pointer-events: none; transition: 0.3s;">
             
             <div class="tabs">
                 <button id="tabPersonal" class="tab-btn active">🔒 個人私帳</button>
@@ -84,7 +76,7 @@
             <div id="reportArea">
                 <h3>📊 帳目統計</h3>
                 <div id="reportCard" class="card report-card">
-                    <p>請輸入或加入群組密碼以讀取統計...</p>
+                    <p>計算中...</p>
                 </div>
             </div>
 

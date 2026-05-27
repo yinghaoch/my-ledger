@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
 const firebaseConfig = {
@@ -13,8 +14,11 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 const storage = getStorage(app);
+const provider = new GoogleAuthProvider();
 
+let currentUserUid = null;
 let currentUserName = "";
 let currentMode = "personal";
 let unsubscribe = null;
@@ -27,53 +31,37 @@ let globalCompressedBlob = null;
 // 初始化填入今日日期
 document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
 
-// 檢查本地是否已經有登入紀錄
-const savedUser = localStorage.getItem('ledger_username');
-if (savedUser) {
-    doLocalLogin(savedUser);
-} else {
-    doLocalLogout();
-}
-
-// 處理登入按鈕
-document.getElementById('loginBtn').addEventListener('click', () => {
-    const name = document.getElementById('usernameInput').value.trim();
-    if (!name) { alert('請輸入使用者名稱！'); return; }
-    localStorage.setItem('ledger_username', name);
-    doLocalLogin(name);
+// 登入狀態監聽 (Google Auth)
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        currentUserUid = user.uid;
+        currentUserName = user.displayName;
+        document.getElementById('welcomeMsg').innerText = `👋 嗨，${currentUserName}！已透過 Google 連線雲端。`;
+        document.getElementById('loginBtn').style.display = "none";
+        document.getElementById('logoutBtn').style.display = "block";
+        document.getElementById('mainApp').style.opacity = "1";
+        document.getElementById('mainApp').style.pointerEvents = "auto";
+        switchMode(currentMode);
+    } else {
+        currentUserUid = null;
+        currentUserName = "";
+        document.getElementById('welcomeMsg').innerText = "請先登入以同步您的雲端帳本";
+        document.getElementById('loginBtn').style.display = "block";
+        document.getElementById('logoutBtn').style.display = "none";
+        document.getElementById('mainApp').style.opacity = "0.3";
+        document.getElementById('mainApp').style.pointerEvents = "none";
+        if (unsubscribe) unsubscribe();
+    }
 });
 
-// 處理登出按鈕
-document.getElementById('logoutBtn').addEventListener('click', () => {
-    localStorage.removeItem('ledger_username');
-    doLocalLogout();
-});
-
-function doLocalLogin(name) {
-    currentUserName = name;
-    document.getElementById('welcomeMsg').innerText = `👋 嗨，${currentUserName}！已連線本地雲端機制。`;
-    document.getElementById('loginFormArea').style.display = "none";
-    document.getElementById('userInfoArea').style.display = "block";
-    document.getElementById('mainApp').style.opacity = "1";
-    document.getElementById('mainApp').style.pointerEvents = "auto";
-    switchMode(currentMode);
-}
-
-function doLocalLogout() {
-    currentUserName = "";
-    if (unsubscribe) unsubscribe();
-    document.getElementById('loginFormArea').style.display = "block";
-    document.getElementById('userInfoArea').style.display = "none";
-    document.getElementById('mainApp').style.opacity = "0.3";
-    document.getElementById('mainApp').style.pointerEvents = "none";
-    document.getElementById('historyCollapseContainer').innerHTML = '<p style="text-align:center;color:#8e8e93;margin-top:20px;">請先登入名稱</p>';
-}
+document.getElementById('loginBtn').addEventListener('click', () => signInWithPopup(auth, provider));
+document.getElementById('logoutBtn').addEventListener('click', () => signOut(auth));
 
 // 頁籤切換
 document.getElementById('tabPersonal').addEventListener('click', () => { expandedDates = []; switchMode('personal'); });
 document.getElementById('tabGroup').addEventListener('click', () => { expandedDates = []; switchMode('group'); });
 
-// 群組房號或房間密碼變更時，自動重新同步監聽
+// 當群組代號或密碼輸入時，觸發監聽
 document.getElementById('groupCode').addEventListener('input', () => { if (currentMode === 'group') triggerGroupSync(); });
 document.getElementById('groupPassword').addEventListener('input', () => { if (currentMode === 'group') triggerGroupSync(); });
 
@@ -111,7 +99,7 @@ function triggerGroupSync() {
     startListeningGroup(targetGroup, targetPassword);
 }
 
-// 📷 智慧發票 QR Code 掃描（高相容性防卡死版本）
+// 📷 智慧發票 QR Code 掃描（相容性最優版本，絕不卡死網頁）
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     readerDiv.style.display = 'block';
@@ -127,6 +115,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                 const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
                 return { width: Math.floor(minEdge * 0.8), height: Math.floor(minEdge * 0.8) };
             },
+            // 使用非 exact 緩和設定，瀏覽器會自主挑選最合適的標準主後置鏡頭，且不引發權限與初始化卡死
             videoConstraints: { facingMode: "environment" },
             rememberLastUsedCamera: true
         }, false);
@@ -181,7 +170,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     }
 });
 
-// 照片即時壓縮與預覽
+// 照片壓縮與預覽
 document.getElementById('photoInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) { document.getElementById('previewArea').style.display = 'none'; globalCompressedBlob = null; return; }
@@ -228,7 +217,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     let uploadedImageUrl = "";
     if (globalCompressedBlob) {
         try {
-            const fileRef = ref(storage, `receipts/${currentUserName}_${new Date().getTime()}.jpg`);
+            const fileRef = ref(storage, `receipts/${currentUserUid}_${new Date().getTime()}.jpg`);
             const snapshot = await uploadBytes(fileRef, globalCompressedBlob);
             uploadedImageUrl = await getDownloadURL(snapshot.ref);
         } catch (storageErr) {
@@ -242,13 +231,14 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
         item: item,
         amount: amount,
         imageUrl: uploadedImageUrl,
-        username: currentUserName, // 統一改用網頁上填寫的本地使用者名稱
+        uid: currentUserUid,        // 保留 Google UID
+        payerName: currentUserName,  // 記錄記帳者的名字
         timestamp: new Date().getTime()
     };
 
     if (currentMode === 'group') {
         newRecord.groupCode = groupCode;
-        newRecord.groupPassword = groupPassword; // 同步寫入房間密碼防護
+        newRecord.groupPassword = groupPassword; // 密碼防護
         let payer = document.getElementById('payerInput').value.trim();
         newRecord.payer = payer ? payer : currentUserName;
     }
@@ -354,21 +344,21 @@ window.toggleCollapseVisibility = function(date) {
     }
 }
 
-// 監聽個人帳目：改用使用者名稱(username)來當做查詢過濾依據
+// 監聽個人帳目：回歸用 Google uid 做隔離
 function startListeningPersonal() {
-    const q = query(collection(db, "all_ledgers"), where("mode", "==", "personal"), where("username", "==", currentUserName));
+    const q = query(collection(db, "all_ledgers"), where("mode", "==", "personal"), where("uid", "==", currentUserUid));
     unsubscribe = onSnapshot(q, (snapshot) => {
         const { totalSpent } = renderCollapsedList(snapshot, true);
         document.getElementById('reportCard').innerHTML = `<p style="font-size:16px; font-weight:bold; color:#007aff;">🔒 您的個人累積總消費：$${totalSpent.toFixed(0)} 元</p>`;
     });
 }
 
-// 監聽群組公帳：雙重安全鎖定，必須同時匹配房間名稱和密碼
+// 監聽群組公帳：同樣採雙重鎖定（房間代號 + 房間密碼）
 function startListeningGroup(targetGroup, targetPassword) {
     const q = query(collection(db, "all_ledgers"), where("mode", "==", "group"), where("groupCode", "==", targetGroup), where("groupPassword", "==", targetPassword));
     unsubscribe = onSnapshot(q, (snapshot) => {
         const { totalSpent, records, members } = renderCollapsedList(snapshot, false);
-        if (records.length === 0) { document.getElementById('reportCard').innerHTML = "<p>🎉 密碼正確！目前此房間尚無消費紀錄，可以開始記帳。</p>"; return; }
+        if (records.length === 0) { document.getElementById('reportCard').innerHTML = "<p>🎉 密碼正確！目前此房間尚無消費紀錄。</p>"; return; }
         if (members.length <= 1) { document.getElementById('reportCard').innerHTML = `<p><b>群組總花費：</b>$${totalSpent} 元</p>`; return; }
 
         let paidValues = {}; members.forEach(m => paidValues[m] = 0);
@@ -391,7 +381,7 @@ function startListeningGroup(targetGroup, targetPassword) {
     });
 }
 
-// 勾選連動控制
+// 勾選連動
 window.toggleSelectDateGroup = function(date, isChecked) {
     document.querySelectorAll(`.item-single-chk[data-date="${date}"]`).forEach(chk => chk.checked = isChecked);
 }
