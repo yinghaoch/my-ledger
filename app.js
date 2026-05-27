@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getAuth, signInWithRedirect, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, signInWithRedirect, GoogleAuthProvider, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBMYdklxkNrpAiBCQsk6qvRZZ4A2fOcRVw",
@@ -27,12 +27,26 @@ let expandedDates = [];
 // 初始化填入今日日期
 document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
 
-// 登入狀態監聽 (Google Auth 改用 Redirect 兼顧手機安全瀏覽器政策)
+// === 核心優化：網頁載入時強制指定儲存區並攔截手機跳轉憑證 ===
+async function initAuth() {
+    try {
+        await setPersistence(auth, browserLocalPersistence);
+        const result = await getRedirectResult(auth);
+        if (result && result.user) {
+            console.log("已捕捉到跳轉登入帳號:", result.user.displayName);
+        }
+    } catch (error) {
+        console.error("捕捉驗證狀態錯誤:", error);
+    }
+}
+initAuth();
+
+// 登入狀態監聽
 onAuthStateChanged(auth, (user) => {
     if (user) {
         currentUserUid = user.uid;
         currentUserName = user.displayName || "使用者";
-        document.getElementById('welcomeMsg').innerText = `👋 嗨，${currentUserName}！已透過 Google 連線雲端。`;
+        document.getElementById('welcomeMsg').innerText = `👋 嗨，${currentUserName}！已連線雲端。`;
         document.getElementById('loginBtn').style.display = "none";
         document.getElementById('logoutBtn').style.display = "block";
         document.getElementById('mainApp').style.opacity = "1";
@@ -50,14 +64,20 @@ onAuthStateChanged(auth, (user) => {
     }
 });
 
-document.getElementById('loginBtn').addEventListener('click', () => signInWithRedirect(auth, provider));
+document.getElementById('loginBtn').addEventListener('click', async () => {
+    try {
+        await setPersistence(auth, browserLocalPersistence);
+        signInWithRedirect(auth, provider);
+    } catch (e) {
+        signInWithRedirect(auth, provider);
+    }
+});
 document.getElementById('logoutBtn').addEventListener('click', () => signOut(auth));
 
 // 頁籤切換
 document.getElementById('tabPersonal').addEventListener('click', () => { expandedDates = []; switchMode('personal'); });
 document.getElementById('tabGroup').addEventListener('click', () => { expandedDates = []; switchMode('group'); });
 
-// 當群組代號或密碼輸入時，觸發監聽
 document.getElementById('groupCode').addEventListener('input', () => { if (currentMode === 'group') triggerGroupSync(); });
 document.getElementById('groupPassword').addEventListener('input', () => { if (currentMode === 'group') triggerGroupSync(); });
 
@@ -95,21 +115,25 @@ function triggerGroupSync() {
     startListeningGroup(targetGroup, targetPassword);
 }
 
-// 📷 智慧發票 QR Code 掃描
+// 📷 智慧發票 QR Code 掃描核心重寫
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
-    readerDiv.style.display = 'block';
-
-    if (html5QrcodeScanner) {
-        html5QrcodeScanner.clear().catch(() => {});
+    
+    // 如果目前正在掃描，點擊按鈕則關閉相機
+    if (html5QrcodeScanner && readerDiv.style.display === 'block') {
+        cleanupScanner();
+        return;
     }
+
+    readerDiv.style.display = 'block';
+    document.getElementById('scanInvoiceBtn').innerText = "🛑 關閉發票掃描器";
 
     try {
         html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
             fps: 15, 
             qrbox: (viewfinderWidth, viewfinderHeight) => {
                 const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                return { width: Math.floor(minEdge * 0.8), height: Math.floor(minEdge * 0.8) };
+                return { width: Math.floor(minEdge * 0.75), height: Math.floor(minEdge * 0.75) };
             },
             videoConstraints: { facingMode: "environment" },
             rememberLastUsedCamera: true
@@ -117,53 +141,90 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
 
         html5QrcodeScanner.render(
             (qrCodeMessage) => {
-                if (!qrCodeMessage || qrCodeMessage.length < 30 || !qrCodeMessage.includes(':')) return; 
+                if (!qrCodeMessage || qrCodeMessage.length < 24) return; 
+
+                // 檢查是否不小心掃到右邊的純明細（右邊明細多以 ** 開頭，或長度較短且不含發票常規前綴）
+                if (qrCodeMessage.startsWith("**") || (qrCodeMessage.includes(':') && !/^[A-Z]{2}\d{8}/.test(qrCodeMessage))) {
+                    alert("⚠️ 這似乎是右側明細 QR Code，請對準「左側」帶有發票號碼的那一顆！");
+                    return;
+                }
 
                 try {
-                    const dateMatch = qrCodeMessage.match(/\d{7}/);
-                    if (!dateMatch) return;
+                    // 正則表達式：匹配台灣發票格式（2碼大寫英文 + 8碼數字 + 7碼日期）
+                    // 例如：BP259660641150526... 
+                    const match = qrCodeMessage.match(/^([A-Z]{2})(\d{8})(\d{7})/);
+                    
+                    if (!match) {
+                        console.log("無效的發票格式標籤:", qrCodeMessage);
+                        return; 
+                    }
 
-                    const dateStr = dateMatch[0];
+                    const invNum = match[1] + match[2]; // 發票號碼：BP25966064
+                    const dateStr = match[3];           // 日期字串：1150526
+                    
+                    // 解析台灣民國年
                     const twYear = parseInt(dateStr.substring(0, 3), 10);
                     const year = twYear + 1911;
                     const month = dateStr.substring(3, 5);
                     const day = dateStr.substring(5, 7);
 
-                    const dateIndex = qrCodeMessage.indexOf(dateStr);
-                    if (dateIndex === -1 || (dateIndex + 19) > qrCodeMessage.length) return;
+                    // 定位金額：金額緊接在 7 碼日期與 4 碼隨機碼之後，長度為 8 碼的十六進位字串
+                    const amountHexIndex = 2 + 8 + 7 + 4; // 21
+                    if (qrCodeMessage.length < (amountHexIndex + 8)) return;
                     
-                    const hexAmount = qrCodeMessage.substring(dateIndex + 11, dateIndex + 19);
+                    const hexAmount = qrCodeMessage.substring(amountHexIndex, amountHexIndex + 8);
                     const amount = parseInt(hexAmount, 16);
 
                     if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) return;
 
-                    let finalItemName = "電子發票消費"; 
-                    const parts = qrCodeMessage.split(':');
-                    if (parts && parts.length > 2) {
-                        for (let i = 2; i < parts.length; i++) {
-                            let p = parts[i].trim();
-                            if (p && isNaN(p) && !p.includes('***')) {
-                                finalItemName = `發票：${p}`;
-                                break;
+                    // 嘗試解析品名（如果有冒號分隔的明細）
+                    let finalItemName = `發票：${invNum}`; 
+                    if (qrCodeMessage.includes(':')) {
+                        const parts = qrCodeMessage.split(':');
+                        if (parts && parts.length > 2) {
+                            for (let i = 2; i < parts.length; i++) {
+                                let p = parts[i].trim();
+                                if (p && isNaN(p) && !p.includes('***') && p.length > 1) {
+                                    finalItemName = `發票：${p}`;
+                                    break;
+                                }
                             }
                         }
+                    } else {
+                        // 如果左側 QR Code 無內建中文品名，可藉由實體店家前綴輔助命名
+                        finalItemName = `發票消費 (${invNum})`;
                     }
 
+                    // 填入表單
                     document.getElementById('dateInput').value = `${year}-${month}-${day}`;
                     document.getElementById('amountInput').value = amount;
                     document.getElementById('itemInput').value = finalItemName;
                     
-                    alert(`🎉 掃描成功！\n發票日期: ${year}-${month}-${day}\n消費品名: ${finalItemName}\n自動帶入金額: $${amount} 元`);
+                    alert(`🎉 發票掃描成功！\n發票號碼: ${invNum}\n發票日期: ${year}-${month}-${day}\n自動帶入金額: $${amount} 元`);
                     
-                    html5QrcodeScanner.clear().then(() => { readerDiv.style.display = 'none'; }).catch(() => { readerDiv.style.display = 'none'; });
-                } catch (err) { console.log("過濾無效訊號:", err); }
+                    cleanupScanner();
+                } catch (err) { 
+                    console.error("發票碼解析出錯:", err); 
+                }
             },
             (errorMessage) => {}
         );
     } catch (err) {
-        console.error("相機啟動錯誤:", err);
+        console.error("初始化相機失敗:", err);
     }
 });
+
+function cleanupScanner() {
+    const readerDiv = document.getElementById('reader');
+    document.getElementById('scanInvoiceBtn').innerText = "📷 掃描發票 QR Code 記帳";
+    if (html5QrcodeScanner) {
+        html5QrcodeScanner.clear()
+            .then(() => { readerDiv.style.display = 'none'; })
+            .catch(() => { readerDiv.style.display = 'none'; });
+    } else {
+        readerDiv.style.display = 'none';
+    }
+}
 
 // 💾 儲存按鈕
 document.getElementById('saveBtn').addEventListener('click', async () => {
@@ -282,6 +343,7 @@ function renderCollapsedList(snapshot, isPersonal) {
 window.toggleCollapseVisibility = function(date) {
     const listEl = document.getElementById(`list-${date}`);
     const arrowEl = document.getElementById(`arrow-${date}`);
+    if (!listEl) return;
     if (listEl.style.display === 'none') {
         listEl.style.display = 'block'; arrowEl.innerText = '▲ 收折';
         if (!expandedDates.includes(date)) expandedDates.push(date);
@@ -291,7 +353,7 @@ window.toggleCollapseVisibility = function(date) {
     }
 }
 
-// 監聽個人帳目：用 Google uid 做隔離
+// 監聽個人帳目
 function startListeningPersonal() {
     const q = query(collection(db, "all_ledgers"), where("mode", "==", "personal"), where("uid", "==", currentUserUid));
     unsubscribe = onSnapshot(q, (snapshot) => {
@@ -300,7 +362,7 @@ function startListeningPersonal() {
     });
 }
 
-// 監聽群組公帳：採雙重鎖定（房間代號 + 房間密碼）
+// 監聽群組公帳
 function startListeningGroup(targetGroup, targetPassword) {
     const q = query(collection(db, "all_ledgers"), where("mode", "==", "group"), where("groupCode", "==", targetGroup), where("groupPassword", "==", targetPassword));
     unsubscribe = onSnapshot(q, (snapshot) => {
