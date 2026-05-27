@@ -1,4 +1,3 @@
-/* 全局樣式優化 */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background-color: #f2f2f7;
@@ -19,7 +18,6 @@ h2, h3 {
     font-weight: 600;
 }
 
-/* 卡片美化 */
 .card {
     background: #ffffff;
     border-radius: 12px;
@@ -31,7 +29,6 @@ h2, h3 {
 .bg-light { background-color: #fafafa; }
 .text-center { text-align: center; }
 
-/* 表單大格子 */
 .form-group {
     margin-bottom: 14px;
     display: flex;
@@ -40,77 +37,66 @@ h2, h3 {
 
 .form-group label {
     font-size: 14px;
-    font-weight: bold;
     margin-bottom: 6px;
-    color: #48484a;
+    color: #3a3a3c;
+    font-weight: 500;
 }
 
-input[type="text"], input[type="number"], input[type="date"] {
-    font-size: 16px; /* 防止 iOS 放大 */
+input, select {
     padding: 12px;
     border: 1px solid #c7c7cc;
     border-radius: 8px;
-    background: #f2f2f7;
-    outline: none;
-    box-sizing: border-box;
-}
-
-/* 📱 核心改動：大幅度加大所有按鈕，高度設為 50px 超好按 */
-button, .tab-btn, .btn-g, .btn-danger, .btn-scan, #saveBtn {
-    width: 100%;
-    height: 50px; /* 大按鈕高 */
     font-size: 16px;
-    font-weight: bold;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: background 0.2s, transform 0.1s;
+    background-color: #fff;
     box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    transition: border-color 0.2s;
 }
 
-button:active {
-    transform: scale(0.98); /* 點擊下沉回饋 */
+input:focus {
+    border-color: #007aff;
+    outline: none;
 }
 
-/* 按鈕顏色區分 */
-#saveBtn {
-    background: #007aff;
+button {
+    width: 100%;
+    padding: 14px;
+    background-color: #007aff;
     color: white;
-    margin-top: 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: opacity 0.2s;
 }
-#saveBtn:active { background: #0056b3; }
 
-.btn-g { background: #34c759; color: white; }
-.btn-g:active { background: #248a3d; }
+button:active { opacity: 0.8; }
+button:disabled { background-color: #aeaeb2; cursor: not-allowed; }
 
-.btn-danger { background: #ff3b30; color: white; }
-.btn-danger:active { background: #c91e14; }
+.btn-g { background-color: #34a853; margin-top: 10px; }
+.btn-danger { background-color: #ff3b30; margin-top: 10px; }
+.btn-scan { background-color: #5856d6; margin-bottom: 10px; }
 
-.btn-scan { background: #af52de; color: white; }
-.btn-scan:active { background: #8930b5; }
-
-/* 頁籤加大排版 */
 .tabs {
     display: flex;
-    gap: 10px;
-    margin-bottom: 16px;
+    gap: 8px;
+    margin-bottom: 14px;
 }
 
 .tab-btn {
     flex: 1;
-    background: #e5e5ea;
+    background-color: #e5e5ea;
     color: #3a3a3c;
+    padding: 10px;
+    font-size: 14px;
 }
 
 .tab-btn.active {
-    background: #1c1c1e;
+    background-color: #1c1c1e;
     color: white;
 }
 
-/* 🔄 日期收折摺疊面板樣式 */
 .date-group {
     background: white;
     border-radius: 10px;
@@ -119,7 +105,6 @@ button:active {
     border: 1px solid #e5e5ea;
 }
 
-/* 摺疊標頭：包含日期、當日總額、展開箭頭 */
 .date-header {
     background: #e5eafe;
     padding: 14px;
@@ -144,7 +129,6 @@ button:active {
     font-size: 15px;
 }
 
-/* 歷史明細明細項目 */
 .item-list {
     list-style: none;
     padding: 0;
@@ -155,37 +139,32 @@ button:active {
 .item-list li {
     padding: 12px 14px;
     border-top: 1px solid #f2f2f7;
+}
+
+.history-item-content {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    font-size: 15px;
+    align-items: center;
 }
 
 .item-left {
     display: flex;
     align-items: center;
-    gap: 12px;
-    flex: 1;
 }
 
-.item-name { font-weight: 500; }
-.item-info { font-size: 12px; color: #8e8e93; margin-top: 2px; }
-.item-amount { font-weight: bold; color: #1c1c1e; }
-
-/* 加大勾選方塊，方便按日期或單筆勾選 */
-input[type="checkbox"] {
-    width: 22px;
-    height: 22px;
-    cursor: pointer;
+.item-name {
+    font-size: 15px;
+    font-weight: 500;
 }
 
-/* 批次刪除工具列組合 */
-.delete-toolbar {
-    display: flex;
-    gap: 10px;
-    margin-top: 10px;
+.item-info {
+    font-size: 12px;
+    color: #8e8e93;
+    margin-top: 2px;
 }
-.btn-toolbar-del {
-    height: 44px;
-    font-size: 14px;
+
+.item-amount {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1c1c1e;
 }

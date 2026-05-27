@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { getAuth, signInWithRedirect, GoogleAuthProvider, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, signInWithRedirect, GoogleAuthProvider, signOut, onAuthStateChanged, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBMYdklxkNrpAiBCQsk6qvRZZ4A2fOcRVw",
@@ -16,6 +16,9 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 
+// 解決跨網域跳轉的關鍵：設定 Custom Parameters
+provider.setCustomParameters({ prompt: 'select_account' });
+
 let currentUserUid = null;
 let currentUserName = "";
 let currentMode = "personal";
@@ -27,21 +30,18 @@ let expandedDates = [];
 // 初始化填入今日日期
 document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
 
-// === 核心優化：網頁載入時強制指定儲存區並攔截手機跳轉憑證 ===
-async function initAuth() {
-    try {
-        await setPersistence(auth, browserLocalPersistence);
-        const result = await getRedirectResult(auth);
+// === 修正：主動且非阻塞地捕捉手機/電腦 Redirect 跳轉結果 ===
+getRedirectResult(auth)
+    .then((result) => {
         if (result && result.user) {
-            console.log("已捕捉到跳轉登入帳號:", result.user.displayName);
+            console.log("跳轉登入成功:", result.user.displayName);
         }
-    } catch (error) {
-        console.error("捕捉驗證狀態錯誤:", error);
-    }
-}
-initAuth();
+    })
+    .catch((error) => {
+        console.error("跳轉認證發生錯誤:", error);
+    });
 
-// 登入狀態監聽
+// === 核心監聽：只要這個沒被阻塞，電腦與手機就絕對能正常顯示登入狀態 ===
 onAuthStateChanged(auth, (user) => {
     if (user) {
         currentUserUid = user.uid;
@@ -64,15 +64,16 @@ onAuthStateChanged(auth, (user) => {
     }
 });
 
-document.getElementById('loginBtn').addEventListener('click', async () => {
-    try {
-        await setPersistence(auth, browserLocalPersistence);
-        signInWithRedirect(auth, provider);
-    } catch (e) {
-        signInWithRedirect(auth, provider);
-    }
+// 點擊登入：回歸最純粹的官方跳轉，不再預先執行可能死鎖的 Persistence
+document.getElementById('loginBtn').addEventListener('click', () => {
+    signInWithRedirect(auth, provider);
 });
-document.getElementById('logoutBtn').addEventListener('click', () => signOut(auth));
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+    signOut(auth).then(() => {
+        window.location.reload(); // 登出後強制刷新，乾淨清空暫存
+    });
+});
 
 // 頁籤切換
 document.getElementById('tabPersonal').addEventListener('click', () => { expandedDates = []; switchMode('personal'); });
@@ -115,11 +116,10 @@ function triggerGroupSync() {
     startListeningGroup(targetGroup, targetPassword);
 }
 
-// 📷 智慧發票 QR Code 掃描核心重寫
+// 📷 智慧發票 QR Code 掃描（相容台灣發票格式）
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     
-    // 如果目前正在掃描，點擊按鈕則關閉相機
     if (html5QrcodeScanner && readerDiv.style.display === 'block') {
         cleanupScanner();
         return;
@@ -130,10 +130,10 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
 
     try {
         html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
-            fps: 15, 
+            fps: 10, 
             qrbox: (viewfinderWidth, viewfinderHeight) => {
                 const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                return { width: Math.floor(minEdge * 0.75), height: Math.floor(minEdge * 0.75) };
+                return { width: Math.floor(minEdge * 0.7), height: Math.floor(minEdge * 0.7) };
             },
             videoConstraints: { facingMode: "environment" },
             rememberLastUsedCamera: true
@@ -143,33 +143,24 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
             (qrCodeMessage) => {
                 if (!qrCodeMessage || qrCodeMessage.length < 24) return; 
 
-                // 檢查是否不小心掃到右邊的純明細（右邊明細多以 ** 開頭，或長度較短且不含發票常規前綴）
                 if (qrCodeMessage.startsWith("**") || (qrCodeMessage.includes(':') && !/^[A-Z]{2}\d{8}/.test(qrCodeMessage))) {
-                    alert("⚠️ 這似乎是右側明細 QR Code，請對準「左側」帶有發票號碼的那一顆！");
+                    alert("⚠️ 這確認是右側明細，請對準「左側」帶有發票號碼的 QR Code！");
                     return;
                 }
 
                 try {
-                    // 正則表達式：匹配台灣發票格式（2碼大寫英文 + 8碼數字 + 7碼日期）
-                    // 例如：BP259660641150526... 
                     const match = qrCodeMessage.match(/^([A-Z]{2})(\d{8})(\d{7})/);
-                    
-                    if (!match) {
-                        console.log("無效的發票格式標籤:", qrCodeMessage);
-                        return; 
-                    }
+                    if (!match) return; 
 
-                    const invNum = match[1] + match[2]; // 發票號碼：BP25966064
-                    const dateStr = match[3];           // 日期字串：1150526
+                    const invNum = match[1] + match[2]; 
+                    const dateStr = match[3];           
                     
-                    // 解析台灣民國年
                     const twYear = parseInt(dateStr.substring(0, 3), 10);
                     const year = twYear + 1911;
                     const month = dateStr.substring(3, 5);
                     const day = dateStr.substring(5, 7);
 
-                    // 定位金額：金額緊接在 7 碼日期與 4 碼隨機碼之後，長度為 8 碼的十六進位字串
-                    const amountHexIndex = 2 + 8 + 7 + 4; // 21
+                    const amountHexIndex = 2 + 8 + 7 + 4; 
                     if (qrCodeMessage.length < (amountHexIndex + 8)) return;
                     
                     const hexAmount = qrCodeMessage.substring(amountHexIndex, amountHexIndex + 8);
@@ -177,8 +168,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
 
                     if (isNaN(year) || isNaN(amount) || parseInt(month, 10) > 12 || parseInt(day, 10) > 31) return;
 
-                    // 嘗試解析品名（如果有冒號分隔的明細）
-                    let finalItemName = `發票：${invNum}`; 
+                    let finalItemName = `發票消費 (${invNum})`;
                     if (qrCodeMessage.includes(':')) {
                         const parts = qrCodeMessage.split(':');
                         if (parts && parts.length > 2) {
@@ -190,27 +180,22 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
                                 }
                             }
                         }
-                    } else {
-                        // 如果左側 QR Code 無內建中文品名，可藉由實體店家前綴輔助命名
-                        finalItemName = `發票消費 (${invNum})`;
                     }
 
-                    // 填入表單
                     document.getElementById('dateInput').value = `${year}-${month}-${day}`;
                     document.getElementById('amountInput').value = amount;
                     document.getElementById('itemInput').value = finalItemName;
                     
-                    alert(`🎉 發票掃描成功！\n發票號碼: ${invNum}\n發票日期: ${year}-${month}-${day}\n自動帶入金額: $${amount} 元`);
-                    
+                    alert(`🎉 發票掃描成功！\n發票號碼: ${invNum}\n自動帶入金額: $${amount} 元`);
                     cleanupScanner();
                 } catch (err) { 
-                    console.error("發票碼解析出錯:", err); 
+                    console.error("發票解析錯誤:", err); 
                 }
             },
             (errorMessage) => {}
         );
     } catch (err) {
-        console.error("初始化相機失敗:", err);
+        console.error("相機啟動失敗:", err);
     }
 });
 
@@ -306,28 +291,28 @@ function renderCollapsedList(snapshot, isPersonal) {
         const arrowText = isExpanded ? '▲ 收折' : '▼ 展開';
         
         mainHTML += `
-            <div class="date-group" id="group-${date}" style="margin-top: 10px; border: 1px solid #e5e5ea; border-radius: 8px; overflow: hidden;">
-                <div class="date-header" onclick="toggleCollapseVisibility('${date}')" style="background: #f2f2f7; padding: 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+            <div class="date-group" id="group-${date}">
+                <div class="date-header" onclick="toggleCollapseVisibility('${date}')">
                     <div class="date-title-left">
                         <input type="checkbox" class="date-group-chk" data-date="${date}" onclick="event.stopPropagation(); toggleSelectDateGroup('${date}', this.checked)">
-                        <span style="font-weight: bold; margin-left: 5px;">📅 ${date}</span>
+                        <span>📅 ${date}</span>
                     </div>
                     <div class="date-total-right">
-                        <span style="font-size: 13px; color: #3a3a3c;">當日總計: <b>$${group.dayTotal.toFixed(0)}</b> 元 <span id="arrow-${date}" style="color: #007aff; margin-left: 5px;">${arrowText}</span></span>
+                        <span>當日總計: <b>$${group.dayTotal.toFixed(0)}</b> 元 <span id="arrow-${date}" style="color: #007aff; margin-left: 5px;">${arrowText}</span></span>
                     </div>
                 </div>
-                <ul class="item-list" id="list-${date}" style="display: ${displayStyle}; list-style: none; padding: 0; margin: 0; background: #fff;">
+                <ul class="item-list" id="list-${date}" style="display: ${displayStyle};">
                     ${group.items.map(item => `
-                        <li style="padding: 10px; border-top: 1px solid #e5e5ea;">
-                            <div class="history-item-content" style="display: flex; justify-content: space-between; align-items: center;">
-                                <div class="item-left" style="display: flex; align-items: center;">
-                                    <input type="checkbox" class="item-single-chk" data-id="${item.id}" data-date="${date}" onclick="checkSingleStatus('${date}')">
+                        <li>
+                            <div class="history-item-content">
+                                <div class="item-left">
+                                    <input type="checkbox" class="item-single-chk" data-id="${item.id}" data-date="${item.date}" onclick="checkSingleStatus('${item.date}')">
                                     <div style="margin-left: 10px;">
-                                        <div class="item-name" style="font-weight: 500;">${item.item}</div>
-                                        <div class="item-info" style="font-size: 11px; color: #8e8e93;">${isPersonal ? '' : '付款人: ' + (item.payer || item.payerName)}</div>
+                                        <div class="item-name">${item.item}</div>
+                                        <div class="item-info">${isPersonal ? '' : '付款人: ' + (item.payer || item.payerName)}</div>
                                     </div>
                                 </div>
-                                <div class="item-amount" style="font-weight: bold; color: #3a3a3c;">$${item.amount}</div>
+                                <div class="item-amount">$${item.amount}</div>
                             </div>
                         </li>
                     `).join('')}
