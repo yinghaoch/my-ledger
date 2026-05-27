@@ -27,9 +27,14 @@
             <div class="card">
                 <h3 id="currentModeTitle">新增個人消費 (私帳)</h3>
                 
+                <div class="form-group text-center">
+                    <button id="scanInvoiceBtn" class="btn-scan">📷 掃描發票 QR Code 記帳</button>
+                    <div id="reader" style="display: none; width: 100%; max-width: 400px; margin: 10px auto; border-radius: 8px; overflow: hidden;"></div>
+                </div>
+                
                 <div id="groupCodeArea" style="display: none;">
                     <div class="form-group">
-                        <label>群組代號 (房間名稱)：</label>
+                        <label>群組代碼 (房間名稱)：</label>
                         <input type="text" id="groupCode" placeholder="例如：2026出遊團">
                     </div>
                     <div class="form-group">
@@ -38,31 +43,17 @@
                     </div>
                 </div>
 
-                <div class="form-group" style="text-align: center;">
-                    <button id="scanInvoiceBtn" class="btn-scan">📷 掃描發票 QR Code 自動帶入</button>
-                    <div id="reader" style="width: 100%; max-width: 400px; margin: 10px auto; display: none; border-radius: 8px; overflow: hidden;"></div>
-                </div>
-
                 <div class="form-group">
                     <label>消費日期：</label>
                     <input type="date" id="dateInput">
                 </div>
                 <div class="form-group">
-                    <label>品名：</label>
+                    <label>花費品名：</label>
                     <input type="text" id="itemInput" placeholder="例如：午餐、民宿">
                 </div>
                 <div class="form-group">
                     <label>金額：</label>
                     <input type="number" id="amountInput" placeholder="輸入金額">
-                </div>
-                
-                <div class="form-group">
-                    <label>附上照片憑證 (會自動壓縮)：</label>
-                    <input type="file" id="photoInput" accept="image/*">
-                    <div id="previewArea" style="margin-top: 10px; display: none;">
-                        <img id="imgPreview" src="" style="width: 100%; max-height: 150px; object-fit: cover; border-radius: 8px;">
-                        <p id="compressInfo" style="font-size: 11px; color: #8e8e93; margin-top: 2px;"></p>
-                    </div>
                 </div>
 
                 <div class="form-group" id="payerArea" style="display: none;">
@@ -80,19 +71,20 @@
                 </div>
             </div>
 
-            <div class="history-title-area">
+            <div class="history-title-area" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
                 <h3>📜 歷史消費明細</h3>
                 <div class="history-actions">
-                    <button id="deleteSelectedBtn" class="btn-danger-outline">🗑️ 刪除選中</button>
-                    <button id="deleteAllBtn" class="btn-danger-outline" style="background:#ff3b30; color:#fff;">💥 清空全部</button>
+                    <button id="deleteSelectedBtn" style="background: none; border: 1px solid #ff3b30; color: #ff3b30; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px;">🗑️ 刪除選中</button>
+                    <button id="deleteAllBtn" style="background: #ff3b30; border: none; color: #fff; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 5px;">💥 清空全部</button>
                 </div>
             </div>
             
             <div id="historyCollapseContainer">
                 <p style="text-align:center; color:#8e8e93; margin-top:20px;">載入中...</p>
             </div>
-
         </div>
     </div>
+
+    <script type="module" src="app.js"></script>
 </body>
 </html>
