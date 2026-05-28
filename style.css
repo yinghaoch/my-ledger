@@ -168,3 +168,69 @@ button:disabled { background-color: #aeaeb2; cursor: not-allowed; }
     font-weight: 600;
     color: #1c1c1e;
 }
+/* ==========================================
+   全新「年 ➔ 月 ➔ 日」三層巢狀收折美化樣式
+   ========================================== */
+.nested-group {
+    background: #ffffff;
+    border-radius: 8px;
+    border: 1px solid #e5e5ea;
+    margin-bottom: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+
+.nested-header {
+    padding: 10px 14px;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    font-size: 14px;
+}
+
+/* 幫各層級換上高質感漸層與色調 */
+.year-header {
+    background-color: #d2daf7; /* 年份：深藍紫色調 */
+    color: #1c1c1e;
+    font-size: 15px;
+    border-bottom: 1px solid #c5cee8;
+}
+
+.month-header {
+    background-color: #e5eafe; /* 月份：中藍紫色調 */
+    color: #2c2c2e;
+}
+
+.day-header {
+    background-color: #f2f2f7; /* 日期：淺灰色調 */
+    color: #3a3a3c;
+    font-weight: 500;
+}
+
+.nested-header:active {
+    filter: brightness(0.92);
+}
+
+.nested-total {
+    font-size: 12px;
+    color: #636366;
+    background: rgba(255, 255, 255, 0.6);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: bold;
+}
+
+.nested-content {
+    padding: 4px;
+    background-color: #fafafa;
+}
+
+/* 修正細項清單縮排 */
+.item-list {
+    margin: 4px 0 4px 0 !important;
+    padding-left: 0 !important;
+    list-style: none;
+}

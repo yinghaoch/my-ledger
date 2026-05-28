@@ -26,8 +26,9 @@ let currentLoadedRecords = [];
 // 全域管理當前啟用的房間代號
 let activeGroupCode = null;
 
-// 全域記憶哪些日期被手動「展開」了，預設為空（代表初始全部收折）
-let expandedDates = [];
+// 全域記憶哪些節點被手動「展開」了，預設為空（代表初始全部收折）
+// 可以存放 "2026", "2026-05", "2026-05-28" 等不同層級的 Key
+let expandedNodes = [];
 
 // 初始化填入今日日期
 document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
@@ -43,7 +44,7 @@ onAuthStateChanged(auth, (user) => {
         document.getElementById('mainApp').style.opacity = "1";
         document.getElementById('mainApp').style.pointerEvents = "auto";
         
-        // 💡 新增：登入成功後，嘗試從記憶中載入上一次最後使用的房間
+        // 嘗試從記憶中載入上一次最後使用的房間
         const lastCode = localStorage.getItem('lastActiveGroupCode');
         if (lastCode) {
             activeGroupCode = lastCode;
@@ -64,10 +65,10 @@ document.getElementById('loginBtn').addEventListener('click', () => signInWithPo
 document.getElementById('logoutBtn').addEventListener('click', () => signOut(auth));
 
 // 頁籤切換
-document.getElementById('tabPersonal').addEventListener('click', () => { expandedDates = []; switchMode('personal'); });
-document.getElementById('tabGroup').addEventListener('click', () => { expandedDates = []; switchMode('group'); });
+document.getElementById('tabPersonal').addEventListener('click', () => { expandedNodes = []; switchMode('personal'); });
+document.getElementById('tabGroup').addEventListener('click', () => { expandedNodes = []; switchMode('group'); });
 
-// 💡 新增功能：將群組代碼存入歷史清單並儲存
+// 將群組代碼存入歷史清單並儲存
 function saveGroupToHistory(code) {
     if (!code) return;
     let history = JSON.parse(localStorage.getItem('groupHistory')) || [];
@@ -78,11 +79,10 @@ function saveGroupToHistory(code) {
     localStorage.setItem('lastActiveGroupCode', code); // 記住最後一次啟用的房間
 }
 
-// 💡 新增功能：在界面上渲染歷史群組按鈕清單
+// 在界面上渲染歷史群組按鈕清單
 function renderGroupHistoryUI() {
     let historyContainer = document.getElementById('groupHistoryList');
     
-    // 如果 HTML 還沒有這個容器，我們動態在 groupCodeArea 裡面補上
     if (!historyContainer) {
         const groupCodeArea = document.getElementById('groupCodeArea');
         if (groupCodeArea) {
@@ -109,7 +109,6 @@ function renderGroupHistoryUI() {
 
     let buttonsHtml = "";
     history.forEach(code => {
-        // 如果是當前連線房間，樣式弄成深色 active 狀態
         const isActive = (code === activeGroupCode);
         const btnStyle = isActive 
             ? "background: #5856d6; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer;"
@@ -119,25 +118,22 @@ function renderGroupHistoryUI() {
     });
     historyContainer.innerHTML = buttonsHtml;
 
-    // 綁定歷史按鈕點擊事件
     document.querySelectorAll('.history-room-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const selectedCode = e.target.getAttribute('data-code');
             activeGroupCode = selectedCode;
             localStorage.setItem('lastActiveGroupCode', selectedCode);
             updateGroupUIState();
-            if (currentMode === 'group') { expandedDates = []; startListeningGroup(); }
+            if (currentMode === 'group') { expandedNodes = []; startListeningGroup(); }
         });
     });
 }
 
-// 整合新版 index.html 的房間按鈕事件與 UI 邏輯
 function updateGroupUIState() {
     const statusEl = document.getElementById('currentGroupStatus');
     const leaveBtn = document.getElementById('leaveGroupBtn');
     const groupInput = document.getElementById('groupCode');
     
-    // 💡 修正：將輸入框的 input 屬性限制為只能輸入數字
     if (groupInput) {
         groupInput.type = "text";
         groupInput.pattern = "[0-9]*";
@@ -156,47 +152,41 @@ function updateGroupUIState() {
         if (groupInput) { groupInput.disabled = false; groupInput.value = ""; }
     }
 
-    // 💡 每次更新狀態都同步刷新歷史清單 UI
     renderGroupHistoryUI();
 }
 
-// 💡 修正：綁定「加入房間」按鈕
 const joinGroupBtn = document.getElementById('joinGroupBtn');
 if (joinGroupBtn) {
     joinGroupBtn.addEventListener('click', () => {
         const code = document.getElementById('groupCode').value.trim();
-        // 💡 修正：驗證改為 4 碼純數字
         if (!/^\d{4}$/.test(code)) { alert('請輸入正確的 4 碼純數字房間代碼！'); return; }
         activeGroupCode = code;
-        saveGroupToHistory(code); // 紀錄到歷史中
+        saveGroupToHistory(code);
         updateGroupUIState();
-        if (currentMode === 'group') { expandedDates = []; startListeningGroup(); }
+        if (currentMode === 'group') { expandedNodes = []; startListeningGroup(); }
     });
 }
 
-// 💡 修正：綁定「建立新群組房間」按鈕（產生 4 碼純數字）
 const createGroupBtn = document.getElementById('createGroupBtn');
 if (createGroupBtn) {
     createGroupBtn.addEventListener('click', () => {
-        // 💡 修正：生成 0000 ~ 9999 之間的 4 碼數字
         let code = Math.floor(1000 + Math.random() * 9000).toString();
         activeGroupCode = code;
-        saveGroupToHistory(code); // 紀錄到歷史中
+        saveGroupToHistory(code);
         alert(`🎉 成功建立群組房間！房間代號為：【${code}】\n請將這 4 碼數字分享給朋友，即可同步記帳！`);
         updateGroupUIState();
-        if (currentMode === 'group') { expandedDates = []; startListeningGroup(); }
+        if (currentMode === 'group') { expandedNodes = []; startListeningGroup(); }
     });
 }
 
-// 💡 修正：綁定「退出當前群組」按鈕
 const leaveGroupBtn = document.getElementById('leaveGroupBtn');
 if (leaveGroupBtn) {
     leaveGroupBtn.addEventListener('click', () => {
         if (confirm('🚪 確定要斷開當前群組房間的連線嗎？（不會清除歷史清單）')) {
             activeGroupCode = null;
-            localStorage.removeItem('lastActiveGroupCode'); // 移除最後一次使用的記憶
+            localStorage.removeItem('lastActiveGroupCode');
             updateGroupUIState();
-            if (currentMode === 'group') { expandedDates = []; startListeningGroup(); }
+            if (currentMode === 'group') { expandedNodes = []; startListeningGroup(); }
         }
     });
 }
@@ -223,7 +213,7 @@ function switchMode(mode) {
     }
 }
 
-// 📷 智慧發票 QR Code 掃描解析
+// 智慧發票 QR Code 掃描解析
 document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     readerDiv.style.display = 'block';
@@ -249,9 +239,7 @@ document.getElementById('scanInvoiceBtn').addEventListener('click', () => {
 
             try {
                 const dateMatch = qrCodeMessage.match(/\d{7}/);
-                if (!dateMatch) {
-                    throw new Error("找不到標準發票日期特徵");
-                }
+                if (!dateMatch) throw new Error("找不到標準發票日期特徵");
 
                 const dateStr = dateMatch[0];
                 const twYear = parseInt(dateStr.substring(0, 3), 10);
@@ -340,7 +328,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     }
 });
 
-// 核心：個人資料監聽
+// 個人資料監聽
 function startListeningPersonal() {
     document.getElementById('historyCollapseContainer').innerHTML = `<p style="text-align: center; color: #8e8e93; margin-top: 20px;">正在讀取個人雲端私帳明細...</p>`;
     
@@ -357,7 +345,7 @@ function startListeningPersonal() {
     });
 }
 
-// 核心：群組資料監聽 (對應 activeGroupCode)
+// 群組資料監聽
 function startListeningGroup() {
     if (!activeGroupCode) {
         document.getElementById('historyCollapseContainer').innerHTML = `<p style="text-align: center; color: #8e8e93; margin-top: 20px;">請先在上方房間連線管理輸入 4 碼代號加入或建立房間</p>`;
@@ -380,20 +368,22 @@ function startListeningGroup() {
     });
 }
 
-// 核心功能：前端數據綜合渲染 (歷史收折 + 報表計算)
+// 💡 核心功能：前端數據綜合渲染（全新升級：年 ➔ 月 ➔ 日 三層結構折疊）
 function renderData() {
     const reportCard = document.getElementById('reportCard');
     const container = document.getElementById('historyCollapseContainer');
 
     if (currentLoadedRecords.length === 0) {
         container.innerHTML = `<p style="text-align: center; color: #8e8e93; margin-top: 20px;">目前尚無任何消費紀錄</p>`;
-        reportCard.innerHTML = `<p>💰 目前無 any 消費，總金額為 $0 元。</p>`;
+        reportCard.innerHTML = `<p>💰 目前無任何消費，總金額為 $0 元。</p>`;
         return;
     }
 
     let totalSum = 0;
     let memberMap = {};
-    let groupsByDate = {};
+    
+    // 建立巢狀樹狀結構：巢狀格式為 tree[year][month][day] = [records...]
+    let treeData = {};
 
     currentLoadedRecords.forEach(r => {
         totalSum += r.amount;
@@ -401,13 +391,23 @@ function renderData() {
             let pName = r.payer ? r.payer : "未知成員";
             memberMap[pName] = (memberMap[pName] || 0) + r.amount;
         }
-        if (!groupsByDate[r.date]) {
-            groupsByDate[r.date] = [];
+
+        // 拆分出年、月、日 (格式預期為 YYYY-MM-DD)
+        const dateParts = r.date.split('-');
+        if (dateParts.length === 3) {
+            const year = dateParts[0] + "年";
+            const month = dateParts[1] + "月";
+            const day = dateParts[2] + "日";
+
+            if (!treeData[year]) treeData[year] = {};
+            if (!treeData[year][month]) treeData[year][month] = {};
+            if (!treeData[year][month][day]) treeData[year][month][day] = [];
+            
+            treeData[year][month][day].push(r);
         }
-        groupsByDate[r.date].push(r);
     });
 
-    // 1. 渲染上方圓角大字統計報表卡片
+    // 1. 渲染上方統計報表卡片
     if (currentMode === 'personal') {
         reportCard.innerHTML = `<p style="font-size: 16px; margin: 5px 0;">個人私帳總消費：<strong style="color:#007aff; font-size:20px;">$${totalSum}</strong> 元</p>`;
     } else {
@@ -419,71 +419,119 @@ function renderData() {
         
         members.forEach(m => {
             let diff = memberMap[m] - avg;
-            let statusStr = "";
-            if (diff >= 0) {
-                statusStr = `<span style="color:#34c759; font-weight:bold;">應拿回 $${Math.abs(diff)}</span>`;
-            } else {
-                statusStr = `<span style="color:#ff3b30; font-weight:bold;">應補分 $${Math.abs(diff)}</span>`;
-            }
+            let statusStr = diff >= 0 
+                ? `<span style="color:#34c759; font-weight:bold;">應拿回 $${Math.abs(diff)}</span>`
+                : `<span style="color:#ff3b30; font-weight:bold;">應補分 $${Math.abs(diff)}</span>`;
             reportHtml += `<p style="font-size: 14px; margin: 6px 0;">🔹 <strong>${m}</strong>：共代墊 $${memberMap[m]} 元 (${statusStr})</p>`;
         });
         reportCard.innerHTML = reportHtml;
     }
 
-    // 2. 建立動態折疊歷史面板 DOM 結構
+    // 2. 開始組裝「年 ➔ 月 ➔ 日」三層 HTML 結構
     let html = '';
-    Object.keys(groupsByDate).forEach(date => {
-        let records = groupsByDate[date];
-        let dayTotal = records.reduce((sum, r) => sum + r.amount, 0);
+
+    // 將年份排序（從新到舊）
+    const sortedYears = Object.keys(treeData).sort((a, b) => b.localeCompare(a));
+    
+    sortedYears.forEach(year => {
+        // 計算該年份總和
+        let yearTotal = 0;
+        Object.values(treeData[year]).forEach(m => Object.values(m).forEach(d => d.forEach(r => yearTotal += r.amount)));
         
-        let isExpanded = expandedDates.includes(date);
-        let arrow = isExpanded ? "▼" : "▶";
-        let listDisplayStyle = isExpanded ? "block" : "none";
+        let isYearExpanded = expandedNodes.includes(year);
+        let yearArrow = isYearExpanded ? "▼" : "▶";
+        let yearDisplayStyle = isYearExpanded ? "block" : "none";
 
         html += `
-        <div class="date-group">
-            <div class="date-header" onclick="toggleDateGroup('${date}')">
-                <div class="date-title-left">
-                    <input type="checkbox" class="date-group-chk" data-date="${date}" onclick="event.stopPropagation(); toggleSelectDateGroup('${date}', this.checked)">
-                    <span>${arrow} ${date}</span>
-                </div>
-                <div class="date-total-right">當日總計: $${dayTotal}</div>
+        <div class="nested-group year-group">
+            <div class="nested-header year-header" onclick="toggleNestedNode('${year}')">
+                <span>${yearArrow} 📅 ${year}</span>
+                <span class="nested-total">年總計: $${yearTotal}</span>
             </div>
-            <ul class="item-list" id="list-${date}" style="display: ${listDisplayStyle};">
+            <div class="nested-content" style="display: ${yearDisplayStyle};">
         `;
 
-        records.forEach(r => {
-            let detailStr = "";
-            if (currentMode === 'group') {
-                detailStr = `<span class="item-payer">${r.payer} 墊</span>`;
-            }
+        // 將月份排序（從新到舊）
+        const sortedMonths = Object.keys(treeData[year]).sort((a, b) => b.localeCompare(a));
+        sortedMonths.forEach(month => {
+            const monthKey = `${year}-${month}`; // 唯一識別 Key
+            let monthTotal = 0;
+            Object.values(treeData[year][month]).forEach(d => d.forEach(r => monthTotal += r.amount));
+
+            let isMonthExpanded = expandedNodes.includes(monthKey);
+            let monthArrow = isMonthExpanded ? "▼" : "▶";
+            let monthDisplayStyle = isMonthExpanded ? "block" : "none";
+
             html += `
-                <li>
-                    <div class="item-left-content">
-                        <input type="checkbox" class="item-single-chk" data-id="${r.id}" data-date="${date}" onclick="event.stopPropagation(); checkSingleStatus('${date}')">
-                        <span class="item-name">${r.item}</span>
-                        ${detailStr}
-                    </div>
-                    <span class="item-amount">$${r.amount}</span>
-                </li>
+            <div class="nested-group month-group" style="margin-left: 12px; margin-top: 4px;">
+                <div class="nested-header month-header" onclick="event.stopPropagation(); toggleNestedNode('${monthKey}')">
+                    <span>${monthArrow} 🗓️ ${month}</span>
+                    <span class="nested-total">月總計: $${monthTotal}</span>
+                </div>
+                <div class="nested-content" style="display: ${monthDisplayStyle};">
             `;
+
+            // 將日期排序（從新到舊）
+            const sortedDays = Object.keys(treeData[year][month]).sort((a, b) => b.localeCompare(a));
+            sortedDays.forEach(day => {
+                const dayKey = `${year}-${month}-${day}`; // 唯一識別 Key
+                const records = treeData[year][month][day];
+                let dayTotal = records.reduce((sum, r) => sum + r.amount, 0);
+
+                // 取出原始 YYYY-MM-DD 作為勾選比對用
+                const rawDateStr = records[0].date; 
+
+                let isDayExpanded = expandedNodes.includes(dayKey);
+                let dayArrow = isDayExpanded ? "▼" : "▶";
+                let dayDisplayStyle = isDayExpanded ? "block" : "none";
+
+                html += `
+                <div class="nested-group day-group" style="margin-left: 12px; margin-top: 4px; margin-bottom: 4px;">
+                    <div class="nested-header day-header" onclick="event.stopPropagation(); toggleNestedNode('${dayKey}')">
+                        <div class="date-title-left">
+                            <input type="checkbox" class="date-group-chk" data-date="${rawDateStr}" onclick="event.stopPropagation(); toggleSelectDateGroup('${rawDateStr}', this.checked)">
+                            <span>${dayArrow} 📍 ${day}</span>
+                        </div>
+                        <span class="nested-total">日總計: $${dayTotal}</span>
+                    </div>
+                    <ul class="item-list" id="list-${rawDateStr}" style="display: ${dayDisplayStyle}; margin-left: 12px; padding-left: 0;">
+                `;
+
+                records.forEach(r => {
+                    let detailStr = (currentMode === 'group') ? `<span class="item-payer">${r.payer} 墊</span>` : "";
+                    html += `
+                        <li style="border-left: 2px solid #5856d6; padding-left: 8px; margin-bottom: 4px;">
+                            <div class="item-left-content">
+                                <input type="checkbox" class="item-single-chk" data-id="${r.id}" data-date="${rawDateStr}" onclick="event.stopPropagation(); checkSingleStatus('${rawDateStr}')">
+                                <span class="item-name">${r.item}</span>
+                                ${detailStr}
+                            </div>
+                            <span class="item-amount">$${r.amount}</span>
+                        </li>
+                    `;
+                });
+
+                html += `</ul></div>`; // 關閉 day-group
+            });
+
+            html += `</div></div>`; // 關閉 month-group
         });
 
-        html += `</ul></div>`;
+        html += `</div></div>`; // 關閉 year-group
     });
 
     container.innerHTML = html;
 }
 
-// 掛載全域折疊與勾選控制常式
-window.toggleDateGroup = function(date) {
-    const index = expandedDates.indexOf(date);
+// 💡 全域控制：折疊與展開節點常式 (適用於 年/月/日 三層)
+window.toggleNestedNode = function(nodeKey) {
+    const index = expandedNodes.indexOf(nodeKey);
     if (index > -1) {
-        expandedDates.splice(index, 1);
+        expandedNodes.splice(index, 1); // 如果已存在就拿掉 (收折)
     } else {
-        expandedDates.push(date);
+        expandedNodes.push(nodeKey); // 如果不存在就加進去 (展開)
     }
-    renderData();
+    renderData(); // 重新渲染刷新 UI 狀態
 }
 
 window.toggleSelectDateGroup = function(date, isChecked) {
@@ -500,7 +548,7 @@ window.checkSingleStatus = function(date) {
     }
 }
 
-// 🗑️ 功能：刪除選中項目
+// 刪除選中項目
 document.getElementById('deleteSelectedBtn').addEventListener('click', async () => {
     const checkedBoxes = document.querySelectorAll('.item-single-chk:checked');
     if (checkedBoxes.length === 0) { alert('請先勾選你要刪除的記帳項目！'); return; }
@@ -519,7 +567,7 @@ document.getElementById('deleteSelectedBtn').addEventListener('click', async () 
     alert('🎉 選擇的項目已成功從雲端刪除！');
 });
 
-// ⚠️ 功能：清空全部項目
+// 清空全部項目
 document.getElementById('deleteAllBtn').addEventListener('click', async () => {
     if (currentLoadedRecords.length === 0) { alert('目前沒有任何可以刪除的紀錄。'); return; }
 
