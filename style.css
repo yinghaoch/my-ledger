@@ -1,5 +1,5 @@
 /* ==========================================
-   1. 全域基礎設定 & 現代化 iOS 風格底色
+   1. 全域現代化 iOS 卡片底色樣式
    ========================================== */
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -7,6 +7,11 @@ body {
     margin: 0;
     padding: 10px;
     color: #1c1c1e;
+    box-sizing: border-box;
+}
+
+*, *:before, *:after {
+    box-sizing: inherit;
 }
 
 .container {
@@ -21,7 +26,6 @@ h2, h3 {
     font-weight: 600;
 }
 
-/* 卡片基礎結構 */
 .card {
     background: #ffffff;
     border-radius: 12px;
@@ -34,7 +38,7 @@ h2, h3 {
 .text-center { text-align: center; }
 
 /* ==========================================
-   2. 表單輸入框與智慧按鈕樣式
+   2. 表單輸入與按鈕元素
    ========================================== */
 .form-group {
     margin-bottom: 14px;
@@ -52,13 +56,13 @@ h2, h3 {
 input[type="text"],
 input[type="number"],
 input[type="date"] {
+    width: 100%;
     padding: 12px;
     border: 1px solid #c7c7cc;
     border-radius: 8px;
     font-size: 16px;
     background-color: #fff;
     color: #1c1c1e;
-    box-sizing: border-box;
     outline: none;
     transition: border-color 0.2s;
 }
@@ -67,7 +71,6 @@ input:focus {
     border-color: #007aff;
 }
 
-/* 按鈕核心 */
 button {
     width: 100%;
     padding: 12px;
@@ -79,38 +82,13 @@ button {
     transition: opacity 0.2s, background-color 0.2s;
 }
 
-button:active {
-    opacity: 0.8;
-}
+button:active { opacity: 0.8; }
 
-#saveBtn {
-    background-color: #34c759;
-    color: white;
-    margin-top: 10px;
-}
-
-#scanInvoiceBtn {
-    background-color: #5856d6;
-    color: white;
-    margin-bottom: 14px;
-}
-
+#saveBtn { background-color: #34c759; color: white; margin-top: 10px; }
 .btn-g { background-color: #4285f4; color: white; }
 .btn-danger { background-color: #ff3b30; color: white; }
 
-/* QR Code 掃描區塊 */
-#reader {
-    width: 100%;
-    background: #000;
-    border-radius: 12px;
-    overflow: hidden;
-    margin-bottom: 14px;
-    display: none;
-}
-
-/* ==========================================
-   3. 功能頁籤切換 (Tabs)
-   ========================================== */
+/* 頂部頁籤切換 */
 .tabs {
     display: flex;
     gap: 8px;
@@ -131,17 +109,16 @@ button:active {
     color: white;
 }
 
-/* 統計報表卡片 */
 .report-card {
     background: linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%);
     border-left: 5px solid #5856d6;
 }
 
 /* ==========================================
-   4. 三層巢狀折疊面板 (年/月/日) 區塊
+   3. 三層巢狀收折手風琴外觀
    ========================================== */
 .nested-group {
-    margin-bottom: 6px;
+    margin-bottom: 5px;
 }
 
 .nested-header {
@@ -154,29 +131,25 @@ button:active {
     user-select: none;
     font-weight: 600;
     border: 1px solid #e5e5ea;
-    transition: background 0.1s;
+    margin-bottom: 2px;
 }
 
-.nested-header:active {
-    filter: brightness(0.95);
-}
-
-/* 三層顏色深淺級距（建立視覺層次） */
+/* 建立年、月、日的階層顏色深淺級距 */
 .year-header { background: #e5eafe; color: #1c1c1e; font-size: 16px; }
 .month-header { background: #f2f4ff; color: #2c2c2e; font-size: 15px; }
 .day-header { background: #fafaff; color: #3a3a3c; font-size: 14px; border-bottom: 2px solid #e5e5ea; }
 
 .nested-total {
     font-size: 13px;
-    color: #8e8e93;
-    font-weight: 500;
+    color: #666;
+    font-weight: 600;
 }
 
 .nested-content {
-    margin-bottom: 5px;
+    margin-left: 4px;
+    margin-bottom: 4px;
 }
 
-/* 日群組左側勾選框對齊調校 */
 .date-title-left {
     display: flex;
     align-items: center;
@@ -184,7 +157,7 @@ button:active {
 }
 
 /* ==========================================
-   5. 💡 關鍵：明細清單表格化樣式 (徹底解決上下堆疊)
+   4. 🚀 終極對齊：明細清單之「表格化」排版核心 🚀
    ========================================== */
 .item-list {
     list-style: none !important;
@@ -197,9 +170,82 @@ button:active {
     overflow: hidden;
 }
 
-/* 表格欄位標題列 (品名、付款人、金額) */
-.item-table-header {
+/* 關鍵列結構：強制設定橫向 Flex 且不允許換行 */
+.item-row {
     display: flex !important;
-    flex-direction: row !important;
+    flex-direction: row !important; /* 確保內容橫向排成一列 */
+    align-items: center !important;  /* 垂直向置中 */
+    justify-content: space-between !important;
+    padding: 12px 14px !important;
+    background: #ffffff;
+    border-bottom: 1px solid #f2f2f7 !important;
+    width: 100% !important;
+}
+
+.item-row:last-child {
+    border-bottom: none !important;
+}
+
+/* 🏆 表格軌道比例分配 🏆 */
+
+.item-single-chk {
+    flex: 0 0 auto !important;     /* 勾選方塊大小固定，不被壓縮 */
+    margin-right: 12px !important;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.col-name {
+    flex: 3.5 !important;          /* 給品名最寬的舒展空間 */
+    text-align: left !important;   /* 文字一律靠左 */
+    font-size: 15px;
+    color: #1c1c1e;
+    white-space: nowrap;          /* 強制品名不換行 */
+    overflow: hidden;
+    text-overflow: ellipsis;       /* 品名太長時自動產生 ... */
+}
+
+.col-payer {
+    flex: 1.5 !important;          /* 幫代墊人標籤留固定比例空間 */
+    text-align: center !important; /* 標籤置中 */
+    display: flex;
+    justify-content: center;
     align-items: center;
-    padding:
+}
+
+.col-amount {
+    flex: 2 !important;            /* 金額空間欄位 */
+    text-align: right !important;  /* 💰金額一律完美靠右對齊 */
+    font-weight: 600;
+    font-size: 15px;
+    color: #1c1c1e;
+}
+
+/* 群組代墊者亮色小徽章 */
+.item-payer {
+    background-color: #e5f1ff;
+    color: #007aff;
+    padding: 2px 7px;
+    border-radius: 5px;
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 500;
+    max-width: 75px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 大量刪除控制列 */
+.delete-toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.btn-toolbar-del {
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 6px;
+}
